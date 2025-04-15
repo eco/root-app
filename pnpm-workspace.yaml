@@ -1,0 +1,4 @@
+packages:
+  - '.'
+  # Uncomment if you want to add additional packages in the future
+  # - 'packages/*'
