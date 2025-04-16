@@ -1,9 +1,11 @@
+import {Hex} from "viem";
+
 export interface Token {
   symbol: string;
   name: string;
   decimals: number;
   logoURI?: string;
-  addresses: Record<number, string>;
+  addresses: Record<number, Hex>;
   groupId?: string; // Used for grouping tokens together (e.g., USDC and USDT)
 }
 

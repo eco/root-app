@@ -63,23 +63,21 @@ export function useTokenBalances() {
         for (const chain of chains) {
           const publicClient = createPublicClient({
             chain,
-            transport: http(chain.rpcUrls.default.http[0]),
+            transport: http(),
           });
 
           const chainPromises = tokens.map(async (token) => {
             const tokenAddress = token.addresses[chain.id];
             
             if (!tokenAddress) return [];
-            
+
             try {
-              const tokenAddressFormatted = tokenAddress as `0x${string}`;
-              const userAddressFormatted = address as `0x${string}`;
               
               const balance = await publicClient.readContract({
-                address: tokenAddressFormatted,
+                address: tokenAddress,
                 abi: erc20Abi,
                 functionName: 'balanceOf',
-                args: [userAddressFormatted],
+                args: [address],
               });
               
               return [{

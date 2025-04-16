@@ -6,21 +6,40 @@ import { chains } from "@/config/chains";
 import { tokens } from "@/config/tokens";
 import { shortenAddress } from "@/utils/format";
 
+type ChainTokenPair = {
+  chainId: number;
+  chainName: string;
+  tokenSymbol: string;
+  tokenName: string;
+  tokenAddress: string;
+};
+
 export function SwapInterface() {
   const { address, isConnected } = useAccount();
-  const [selectedChain, setSelectedChain] = useState(chains[0]);
-  const [selectedToken, setSelectedToken] = useState(tokens[0]);
+  
+  // Create all valid chain-token pairs
+  const chainTokenPairs: ChainTokenPair[] = chains.flatMap(chain => 
+    tokens
+      .filter(token => token.addresses[chain.id])
+      .map(token => ({
+        chainId: chain.id,
+        chainName: chain.name,
+        tokenSymbol: token.symbol,
+        tokenName: token.name,
+        tokenAddress: token.addresses[chain.id]
+      }))
+  );
+  
+  const [selectedPair, setSelectedPair] = useState<ChainTokenPair>(chainTokenPairs[0]);
   const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   
-  const handleChainChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const chain = chains.find(c => c.id === Number(e.target.value));
-    if (chain) setSelectedChain(chain);
-  };
-  
-  const handleTokenChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const token = tokens.find(t => t.symbol === e.target.value);
-    if (token) setSelectedToken(token);
+  const handlePairChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const [chainId, tokenSymbol] = e.target.value.split('|');
+    const pair = chainTokenPairs.find(p => 
+      p.chainId === Number(chainId) && p.tokenSymbol === tokenSymbol
+    );
+    if (pair) setSelectedPair(pair);
   };
   
   const handleRecipientChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,8 +58,8 @@ export function SwapInterface() {
     e.preventDefault();
     // In a real app, this would handle the transaction
     console.log({
-      chainId: selectedChain.id,
-      token: selectedToken.symbol,
+      chainId: selectedPair.chainId,
+      token: selectedPair.tokenSymbol,
       amount,
       recipient: recipient || address,
     });
@@ -63,33 +82,16 @@ export function SwapInterface() {
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Chain
+            Chain & Token
           </label>
           <select
-            value={selectedChain.id}
-            onChange={handleChainChange}
+            value={`${selectedPair.chainId}|${selectedPair.tokenSymbol}`}
+            onChange={handlePairChange}
             className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           >
-            {chains.map((chain) => (
-              <option key={chain.id} value={chain.id}>
-                {chain.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Token
-          </label>
-          <select
-            value={selectedToken.symbol}
-            onChange={handleTokenChange}
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          >
-            {tokens.map((token) => (
-              <option key={token.symbol} value={token.symbol} disabled={!token.addresses[selectedChain.id]}>
-                {token.symbol} - {token.name}
+            {chainTokenPairs.map((pair) => (
+              <option key={`${pair.chainId}-${pair.tokenSymbol}`} value={`${pair.chainId}|${pair.tokenSymbol}`}>
+                {pair.chainName} - {pair.tokenSymbol} ({pair.tokenName})
               </option>
             ))}
           </select>
