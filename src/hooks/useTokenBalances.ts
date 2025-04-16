@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { createPublicClient, http } from "viem";
+import { createPublicClient } from "viem";
 import { tokens } from "@/config/tokens";
 import { chains } from "@/config/chains";
+import { keyManagerRpc } from "@/utils/keyManagerRpc";
 
 // ERC20 ABI (minimal for balance checking)
 const erc20Abi = [
@@ -66,7 +67,7 @@ export function useTokenBalances() {
         for (const chain of chains) {
           const publicClient = createPublicClient({
             chain,
-            transport: http(),
+            transport: keyManagerRpc(), // Uses default API keys from rpcUrlBuilder
           });
 
           const chainPromises = tokens.map(async (token) => {

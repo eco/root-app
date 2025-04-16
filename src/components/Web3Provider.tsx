@@ -17,6 +17,7 @@ import {
   trustWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { publicProvider } from "wagmi/providers/public";
+import { customProvider } from "@/utils/customProvider";
 
 import "@rainbow-me/rainbowkit/styles.css";
 
@@ -29,7 +30,7 @@ const projectId = "YOUR_WALLETCONNECT_PROJECT_ID"; // In production, this should
 // Configure chains & providers
 const { chains, publicClient } = configureChains(
   [mainnet, polygon, arbitrum, base],
-  [publicProvider()],
+  [customProvider(), publicProvider()], // Uses default API keys from rpcUrlBuilder
 );
 
 // Configure supported wallets
