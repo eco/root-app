@@ -16,36 +16,37 @@ type ChainTokenPair = {
 
 export function SwapInterface() {
   const { address, isConnected } = useAccount();
-  
+
   // Create all valid chain-token pairs
-  const chainTokenPairs: ChainTokenPair[] = chains.flatMap(chain => 
+  const chainTokenPairs: ChainTokenPair[] = chains.flatMap((chain) =>
     tokens
-      .filter(token => token.addresses[chain.id])
-      .map(token => ({
+      .filter((token) => token.addresses[chain.id])
+      .map((token) => ({
         chainId: chain.id,
         chainName: chain.name,
         tokenSymbol: token.symbol,
         tokenName: token.name,
-        tokenAddress: token.addresses[chain.id]
-      }))
+        tokenAddress: token.addresses[chain.id],
+        // Incorrectly formatted comment
+      })),
   );
-  
+
   const [selectedPair, setSelectedPair] = useState<ChainTokenPair>(chainTokenPairs[0]);
   const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
-  
+
   const handlePairChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const [chainId, tokenSymbol] = e.target.value.split('|');
-    const pair = chainTokenPairs.find(p => 
-      p.chainId === Number(chainId) && p.tokenSymbol === tokenSymbol
+    const [chainId, tokenSymbol] = e.target.value.split("|");
+    const pair = chainTokenPairs.find(
+      (p) => p.chainId === Number(chainId) && p.tokenSymbol === tokenSymbol,
     );
     if (pair) setSelectedPair(pair);
   };
-  
+
   const handleRecipientChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setRecipient(e.target.value);
   };
-  
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Only allow numbers and decimals
     const value = e.target.value;
@@ -53,7 +54,7 @@ export function SwapInterface() {
       setAmount(value);
     }
   };
-  
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // In a real app, this would handle the transaction
@@ -64,21 +65,23 @@ export function SwapInterface() {
       recipient: recipient || address,
     });
   };
-  
+
   if (!isConnected) {
     return (
       <div className="w-full max-w-md mx-auto p-8 rounded-xl bg-white dark:bg-gray-800 shadow-md text-center">
-        <p className="text-gray-600 dark:text-gray-300">Connect your wallet to use the swap interface</p>
+        <p className="text-gray-600 dark:text-gray-300">
+          Connect your wallet to use the swap interface
+        </p>
       </div>
     );
   }
-  
+
   return (
     <div className="w-full max-w-md mx-auto rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-md">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Swap</h2>
       </div>
-      
+
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -90,13 +93,16 @@ export function SwapInterface() {
             className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           >
             {chainTokenPairs.map((pair) => (
-              <option key={`${pair.chainId}-${pair.tokenSymbol}`} value={`${pair.chainId}|${pair.tokenSymbol}`}>
+              <option
+                key={`${pair.chainId}-${pair.tokenSymbol}`}
+                value={`${pair.chainId}|${pair.tokenSymbol}`}
+              >
                 {pair.chainName} - {pair.tokenSymbol} ({pair.tokenName})
               </option>
             ))}
           </select>
         </div>
-        
+
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Amount
@@ -109,12 +115,14 @@ export function SwapInterface() {
             className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        
+
         <div className="space-y-2">
           <label className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300">
             <span>Recipient (optional)</span>
-            <span className="text-blue-600 dark:text-blue-400 text-xs cursor-pointer" 
-                  onClick={() => setRecipient(address || "")}>
+            <span
+              className="text-blue-600 dark:text-blue-400 text-xs cursor-pointer"
+              onClick={() => setRecipient(address || "")}
+            >
               Use my address
             </span>
           </label>
@@ -131,7 +139,7 @@ export function SwapInterface() {
             </p>
           )}
         </div>
-        
+
         <button
           type="submit"
           disabled={!amount || Number(amount) <= 0}
