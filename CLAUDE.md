@@ -3,6 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Commands
+
 - Build: `pnpm build`
 - Development: `pnpm dev`
 - Start production: `pnpm start`
@@ -10,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Clean: `pnpm clean`
 
 ## Code Style
+
 - TypeScript with strict mode enabled
 - Path alias: `@/*` → `./src/*`
 - ESLint: Next.js core-web-vitals and TypeScript rules
@@ -22,6 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Error handling: Use try/catch with proper error logging
 
 ## Project Structure
+
 - Next.js 15.3.0 app router
 - React 19
 - Place components in dedicated files

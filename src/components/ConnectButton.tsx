@@ -6,14 +6,7 @@ import { shortenAddress } from "@/utils/format";
 export function ConnectButton() {
   return (
     <RainbowConnectButton.Custom>
-      {({
-        account,
-        chain,
-        openAccountModal,
-        openChainModal,
-        openConnectModal,
-        mounted,
-      }) => {
+      {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
         return (
           <div
             className="flex items-center"
@@ -57,7 +50,7 @@ export function ConnectButton() {
                       <div className="w-4 h-4 overflow-hidden">
                         {chain.iconUrl && (
                           // Using inline style instead of img to avoid ESLint warning
-                          <div 
+                          <div
                             className="w-4 h-4 bg-contain bg-center bg-no-repeat"
                             style={{ backgroundImage: `url(${chain.iconUrl})` }}
                             role="img"
@@ -74,9 +67,7 @@ export function ConnectButton() {
                     type="button"
                     className="px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm flex items-center gap-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                   >
-                    {account.displayBalance
-                      ? `${account.displayBalance}`
-                      : ""}{" "}
+                    {account.displayBalance ? `${account.displayBalance}` : ""}{" "}
                     <span>{shortenAddress(account.address)}</span>
                   </button>
                 </div>

@@ -3,12 +3,12 @@ import { formatUnits } from "viem/utils";
 export function formatTokenAmount(amount: bigint, decimals: number, maxDecimals = 4): string {
   const formatted = formatUnits(amount, decimals);
   const parts = formatted.split(".");
-  
+
   if (parts.length === 1) return parts[0];
-  
+
   const integerPart = parts[0];
   const decimalPart = parts[1].slice(0, maxDecimals).replace(/0+$/, "");
-  
+
   if (decimalPart === "") return integerPart;
   return `${integerPart}.${decimalPart}`;
 }

@@ -3,13 +3,18 @@
 import { ReactNode } from "react";
 import { WagmiConfig, createConfig, configureChains } from "wagmi";
 import { mainnet, polygon, arbitrum, base } from "wagmi/chains";
-import { connectorsForWallets, RainbowKitProvider, darkTheme, lightTheme } from "@rainbow-me/rainbowkit";
-import { 
+import {
+  connectorsForWallets,
+  RainbowKitProvider,
+  darkTheme,
+  lightTheme,
+} from "@rainbow-me/rainbowkit";
+import {
   metaMaskWallet,
   coinbaseWallet,
   walletConnectWallet,
   rainbowWallet,
-  trustWallet
+  trustWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { publicProvider } from "wagmi/providers/public";
 
@@ -24,7 +29,7 @@ const projectId = "YOUR_WALLETCONNECT_PROJECT_ID"; // In production, this should
 // Configure chains & providers
 const { chains, publicClient } = configureChains(
   [mainnet, polygon, arbitrum, base],
-  [publicProvider()]
+  [publicProvider()],
 );
 
 // Configure supported wallets
@@ -39,10 +44,7 @@ const connectors = connectorsForWallets([
   },
   {
     groupName: "Others",
-    wallets: [
-      rainbowWallet({ projectId, chains }),
-      trustWallet({ projectId, chains }),
-    ],
+    wallets: [rainbowWallet({ projectId, chains }), trustWallet({ projectId, chains })],
   },
 ]);
 

@@ -33,11 +33,14 @@ export interface GroupedTokenBalance {
   displayName: string;
   decimals: number;
   totalBalance: bigint;
-  balanceByChain: Record<number, { 
-    balance: bigint; 
-    address: string;
-    tokenSymbol: string;
-  }>;
+  balanceByChain: Record<
+    number,
+    {
+      balance: bigint;
+      address: string;
+      tokenSymbol: string;
+    }
+  >;
 }
 
 export function useTokenBalances() {
@@ -55,7 +58,7 @@ export function useTokenBalances() {
 
       setIsLoading(true);
       setError(null);
-      
+
       try {
         const balancePromises: Promise<TokenBalance[]>[] = [];
 
@@ -68,27 +71,28 @@ export function useTokenBalances() {
 
           const chainPromises = tokens.map(async (token) => {
             const tokenAddress = token.addresses[chain.id];
-            
+
             if (!tokenAddress) return [];
 
             try {
-              
               const balance = await publicClient.readContract({
                 address: tokenAddress,
                 abi: erc20Abi,
-                functionName: 'balanceOf',
+                functionName: "balanceOf",
                 args: [address],
               });
-              
-              return [{
-                chainId: chain.id,
-                tokenSymbol: token.symbol,
-                tokenName: token.name,
-                balance,
-                decimals: token.decimals,
-                address: tokenAddress,
-                groupId: token.groupId,
-              }];
+
+              return [
+                {
+                  chainId: chain.id,
+                  tokenSymbol: token.symbol,
+                  tokenName: token.name,
+                  balance,
+                  decimals: token.decimals,
+                  address: tokenAddress,
+                  groupId: token.groupId,
+                },
+              ];
             } catch (err) {
               console.error(`Error fetching balance for ${token.symbol} on ${chain.name}:`, err);
               return [];
@@ -112,15 +116,20 @@ export function useTokenBalances() {
   }, [address]);
 
   // Group tokens by their groupId or symbol if no groupId
-  const balancesByToken = balances.reduce<Record<string, { 
-    tokenSymbol: string;
-    tokenName: string;
-    decimals: number;
-    totalBalance: bigint;
-    balanceByChain: Record<number, { balance: bigint; address: string }>;
-  }>>((acc, balance) => {
+  const balancesByToken = balances.reduce<
+    Record<
+      string,
+      {
+        tokenSymbol: string;
+        tokenName: string;
+        decimals: number;
+        totalBalance: bigint;
+        balanceByChain: Record<number, { balance: bigint; address: string }>;
+      }
+    >
+  >((acc, balance) => {
     const { tokenSymbol, chainId, balance: amount, decimals, address } = balance;
-    
+
     if (!acc[tokenSymbol]) {
       acc[tokenSymbol] = {
         tokenSymbol,
@@ -130,40 +139,40 @@ export function useTokenBalances() {
         balanceByChain: {},
       };
     }
-    
-    acc[tokenSymbol].balanceByChain[chainId] = { 
+
+    acc[tokenSymbol].balanceByChain[chainId] = {
       balance: amount,
       address,
     };
     acc[tokenSymbol].totalBalance += amount;
-    
+
     return acc;
   }, {});
-  
+
   // Group and sum balances by token group
   const balancesByGroup = balances.reduce<Record<string, GroupedTokenBalance>>((acc, balance) => {
     const { chainId, balance: amount, decimals, address, tokenSymbol, tokenName } = balance;
     const groupId = balance.groupId || tokenSymbol.toLowerCase();
-    
+
     if (!acc[groupId]) {
       // For the display name/symbol, prioritize the simplest version (e.g., USDC over USDC.e)
       acc[groupId] = {
         groupId,
-        displaySymbol: groupId === 'USD' ? 'USD' : tokenSymbol,
-        displayName: groupId === 'USD' ? 'USD Stablecoins' : tokenName,
+        displaySymbol: groupId === "USD" ? "USD" : tokenSymbol,
+        displayName: groupId === "USD" ? "USD Stablecoins" : tokenName,
         decimals,
         totalBalance: 0n,
         balanceByChain: {},
       };
     }
-    
-    acc[groupId].balanceByChain[chainId] = { 
+
+    acc[groupId].balanceByChain[chainId] = {
       balance: amount,
       address,
       tokenSymbol,
     };
     acc[groupId].totalBalance += amount;
-    
+
     return acc;
   }, {});
 

@@ -8,9 +8,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   return (
     <Web3Provider>
       <Header />
-      <main className="container mx-auto px-4 py-8">
-        {children}
-      </main>
+      <main className="container mx-auto px-4 py-8">{children}</main>
     </Web3Provider>
   );
 }
