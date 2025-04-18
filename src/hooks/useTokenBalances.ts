@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { createPublicClient } from "viem";
+import { createPublicClient, Hex } from "viem";
 import { tokens } from "@/config/tokens";
 import { chains } from "@/config/chains";
 import { keyManagerRpc } from "@/utils/keyManagerRpc";
@@ -24,7 +24,7 @@ export interface TokenBalance {
   tokenName: string;
   balance: bigint;
   decimals: number;
-  address: string;
+  address: Hex;
   groupId?: string;
 }
 
@@ -38,7 +38,7 @@ export interface GroupedTokenBalance {
     number,
     Array<{
       balance: bigint;
-      address: string;
+      address: Hex;
       tokenSymbol: string;
     }>
   >;

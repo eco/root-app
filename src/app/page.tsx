@@ -2,7 +2,6 @@
 
 import { SendInterface } from "@/components/SendInterface";
 import { TokenBalances } from "@/components/TokenBalances";
-import { Permit3Signer } from "@/components/Permit3Signer";
 
 export default function Home() {
   return (
@@ -14,9 +13,6 @@ export default function Home() {
         <div className="md:w-1/2">
           <TokenBalances />
         </div>
-      </div>
-      <div className="w-full">
-        <Permit3Signer />
       </div>
     </div>
   );

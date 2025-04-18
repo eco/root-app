@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAccount, useSwitchNetwork, usePublicClient } from "wagmi";
-import { shortenAddress } from "@/utils/format";
-import { useTokenBalances, TokenBalance } from "@/hooks/useTokenBalances";
-import { formatTokenAmount } from "@/utils/format";
+import { useEffect, useState } from "react";
+import { useAccount, usePublicClient, useSwitchNetwork } from "wagmi";
+import { formatTokenAmount, shortenAddress } from "@/utils/format";
+import { TokenBalance, useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
 import { z } from "zod";
-import { isAddress } from "viem";
-import { usePermit3, Permit3SignatureResult, PERMIT3_ADDRESSES } from "@/hooks/usePermit3";
+import { isAddress, isAddressEqual } from "viem";
+import { PERMIT3_ADDRESSES, Permit3SignatureResult, usePermit3 } from "@/hooks/usePermit3";
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
 
@@ -89,17 +88,15 @@ export function SendInterface() {
   useEffect(() => {
     if (balances.length > 0 && allowances.length > 0 && selectedTokens.length === 0) {
       setSelectedTokens(
-        balances
-          .filter((balance) => balance.balance > 0n)
-          .map((balance) => {
-            const availableBal = getAvailableBalance(balance, allowances);
-            return {
-              ...balance,
-              // Only select tokens that have an available balance
-              isSelected: availableBal > 0n,
-              availableBalance: availableBal,
-            };
-          }),
+        balances.map((balance) => {
+          const availableBal = getAvailableBalance(balance, allowances);
+          return {
+            ...balance,
+            // Only select tokens that have an available balance
+            isSelected: availableBal > 0n,
+            availableBalance: availableBal,
+          };
+        }),
       );
     }
   }, [balances, allowances, selectedTokens.length, getAvailableBalance]);
@@ -117,13 +114,14 @@ export function SendInterface() {
   };
 
   const handleTokenSelectionChange = (chainId: number, tokenAddress: string) => {
-    setSelectedTokens((current) =>
-      current.map((token) =>
-        token.chainId === chainId && token.address === tokenAddress
-          ? { ...token, isSelected: !token.isSelected }
-          : token,
-      ),
-    );
+    setSelectedTokens((current) => {
+      return current.map((token) => {
+        if (token.chainId === chainId && token.address === tokenAddress) {
+          return { ...token, isSelected: !token.isSelected };
+        }
+        return token;
+      });
+    });
   };
 
   const getTotalSelectedBalance = () => {
@@ -659,41 +657,68 @@ export function SendInterface() {
             </div>
 
             <div className="space-y-3">
-              {selectedTokens.map((token) => (
-                <div
-                  key={`${token.chainId}-${token.address}`}
-                  className="flex items-center justify-between p-2 border border-gray-200 dark:border-gray-700 rounded-md"
-                >
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={token.isSelected}
-                      onChange={() => handleTokenSelectionChange(token.chainId, token.address)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <div className="flex flex-col">
-                      <span className="text-gray-900 dark:text-white">{token.tokenSymbol}</span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {chainMap[token.chainId]?.name}
+              {balances.map((token) => {
+                // Calculate available balance for this token
+                const availableBal = getAvailableBalance(token, allowances);
+                const isSelected = selectedTokens.find(
+                  (selectToken) =>
+                    isAddressEqual(token.address, selectToken.address) &&
+                    token.chainId === selectToken.chainId,
+                )?.isSelected;
+
+                // Determine if the token is disabled
+                const isDisabled = availableBal === 0n;
+
+                return (
+                  <div
+                    key={`${token.chainId}-${token.address}`}
+                    className={`flex items-center justify-between p-2 border border-gray-200 dark:border-gray-700 rounded-md ${
+                      isDisabled ? "opacity-70" : ""
+                    }`}
+                  >
+                    <label
+                      className={`flex items-center space-x-3 ${isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleTokenSelectionChange(token.chainId, token.address)}
+                        disabled={isDisabled}
+                        className={`h-4 w-4 border-gray-300 rounded ${
+                          isDisabled
+                            ? "text-gray-400 focus:ring-gray-400 cursor-not-allowed"
+                            : "text-blue-600 focus:ring-blue-500"
+                        }`}
+                      />
+                      <div className="flex flex-col">
+                        <span
+                          className={`${isDisabled ? "text-gray-500 dark:text-gray-500" : "text-gray-900 dark:text-white"}`}
+                        >
+                          {token.tokenSymbol}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {chainMap[token.chainId]?.name}
+                        </span>
+                      </div>
+                    </label>
+                    <div className="flex flex-col items-end">
+                      <span
+                        className={`${isDisabled ? "text-gray-500" : "text-gray-700 dark:text-gray-300"} font-medium`}
+                      >
+                        {formatTokenAmount(availableBal, token.decimals)}
                       </span>
-                    </div>
-                  </label>
-                  <div className="flex flex-col items-end">
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">
-                      {formatTokenAmount(
-                        token.availableBalance || getAvailableBalance(token, allowances),
-                        token.decimals,
+                      {availableBal !== token.balance && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatTokenAmount(token.balance, token.decimals)} total
+                        </span>
                       )}
-                    </span>
-                    {(token.availableBalance || getAvailableBalance(token, allowances)) !==
-                      token.balance && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {formatTokenAmount(token.balance, token.decimals)} total
-                      </span>
-                    )}
+                      {isDisabled && (
+                        <span className="text-xs text-red-500 mt-1">No allowance</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="mt-4 flex justify-end">

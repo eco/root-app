@@ -1,6 +1,14 @@
 import { formatUnits } from "viem/utils";
 
 export function formatTokenAmount(amount: bigint, decimals: number, maxDecimals = 4): string {
+  // Max uint256 value (2^256 - 1)
+  const maxUint256 = 2n ** 256n - 1n;
+
+  // Check if the amount is the max uint256 value (infinite approval)
+  if (amount === maxUint256) {
+    return "Infinite";
+  }
+
   const formatted = formatUnits(amount, decimals);
   const parts = formatted.split(".");
 

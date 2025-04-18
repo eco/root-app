@@ -2,10 +2,11 @@
 
 import { Fragment, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { useAccount, usePublicClient, useWalletClient } from "wagmi";
+import { useAccount, usePublicClient, useWalletClient, useSwitchNetwork } from "wagmi";
 import { formatTokenAmount } from "@/utils/format";
 import { PERMIT3_ADDRESSES } from "@/hooks/usePermit3";
 import { TokenAllowance } from "@/hooks/useTokenAllowances";
+import { chains } from "@/config/chains";
 
 // ERC20 ABI for approvals
 const erc20ApprovalAbi = [
@@ -35,12 +36,40 @@ export function AllowanceDialog({
   onSuccess,
 }: AllowanceDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const { switchNetwork } = useSwitchNetwork();
 
   if (!tokenAllowance) return null;
+
+  // Get chain name for display
+  const chainName =
+    chains.find((chain) => chain.id === tokenAllowance.chainId)?.name ||
+    `Chain ${tokenAllowance.chainId}`;
+
+  const handleNetworkSwitch = async () => {
+    if (!switchNetwork) {
+      setError("Network switching not supported by your wallet");
+      return false;
+    }
+
+    try {
+      setIsSwitchingNetwork(true);
+      await switchNetwork(tokenAllowance.chainId);
+      // Wait a moment for the network switch to complete
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setIsSwitchingNetwork(false);
+      return true;
+    } catch (err) {
+      console.error("Error switching network:", err);
+      setError("Failed to switch network. Please try manually.");
+      setIsSwitchingNetwork(false);
+      return false;
+    }
+  };
 
   const handleSetAllowance = async (amount: bigint) => {
     if (!address || !walletClient || !publicClient) {
@@ -61,9 +90,24 @@ export function AllowanceDialog({
       // Verify chain matches
       const currentChainId = publicClient.chain?.id;
       if (currentChainId !== tokenAllowance.chainId) {
-        setError(`Current chain (${currentChainId}) does not match token chain (${tokenAllowance.chainId}). 
-                Please switch networks first.`);
-        return;
+        // If chain doesn't match, prompt for network switch
+        const networkSwitchMsg = `This token is on ${chainName}, but you're connected to a different network.`;
+
+        // Set informational error
+        setError(`${networkSwitchMsg} Please switch networks and try again.`);
+
+        // Attempt to switch network
+        const switched = await handleNetworkSwitch();
+        if (!switched) {
+          return; // Network switch failed or was rejected
+        }
+
+        // Update the error to indicate the user needs to click again
+        setError(
+          `Successfully switched to ${chainName}. Please click the button again to continue.`,
+        );
+        setIsLoading(false);
+        return; // Exit early, requiring user to click button again
       }
 
       // Simulate the transaction to check for errors
@@ -145,12 +189,13 @@ export function AllowanceDialog({
                     allowed to access.
                   </p>
 
-                  <div className="mt-4 flex flex-col space-y-2">
+                  <div className="mt-3 flex flex-col space-y-2">
                     <p className="text-sm text-gray-600 dark:text-gray-300">
                       Current allowance:{" "}
                       {formatTokenAmount(tokenAllowance.allowance, tokenAllowance.decimals)}{" "}
                       {tokenAllowance.tokenSymbol}
                     </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">Network: {chainName}</p>
                   </div>
 
                   {error && (
@@ -164,17 +209,25 @@ export function AllowanceDialog({
                       type="button"
                       className="inline-flex justify-center rounded-md border border-transparent bg-blue-100 dark:bg-blue-900 px-4 py-2 text-sm font-medium text-blue-900 dark:text-blue-100 hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => handleSetAllowance(infiniteAmount)}
-                      disabled={isLoading}
+                      disabled={isLoading || isSwitchingNetwork}
                     >
-                      {isLoading ? "Processing..." : "Infinite Approval"}
+                      {isLoading
+                        ? "Processing..."
+                        : isSwitchingNetwork
+                          ? "Switching Network..."
+                          : "Infinite Approval"}
                     </button>
                     <button
                       type="button"
                       className="inline-flex justify-center rounded-md border border-transparent bg-red-100 dark:bg-red-900 px-4 py-2 text-sm font-medium text-red-900 dark:text-red-100 hover:bg-red-200 dark:hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => handleSetAllowance(0n)}
-                      disabled={isLoading}
+                      disabled={isLoading || isSwitchingNetwork}
                     >
-                      {isLoading ? "Processing..." : "Revoke Approval"}
+                      {isLoading
+                        ? "Processing..."
+                        : isSwitchingNetwork
+                          ? "Switching Network..."
+                          : "Revoke Approval"}
                     </button>
                   </div>
                 </div>
@@ -184,7 +237,7 @@ export function AllowanceDialog({
                     type="button"
                     className="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2"
                     onClick={onClose}
-                    disabled={isLoading}
+                    disabled={isLoading || isSwitchingNetwork}
                   >
                     Cancel
                   </button>
