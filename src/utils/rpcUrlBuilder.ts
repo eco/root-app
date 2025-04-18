@@ -6,7 +6,7 @@ export type ApiKeys = {
 };
 
 export const defaultApiKeys = {
-  alchemy: process.env.ALCHEMY_API_KEY || "YOUR_ALCHEMY_API_KEY",
+  alchemy: process.env.NEXT_PUBLIC_ALCHEMY_API_KEY,
 };
 
 /**
@@ -24,10 +24,8 @@ export function buildRpcUrl(chain?: Chain, customApiKeys: ApiKeys = {}): string 
 
   // If we have an Alchemy API key and the chain supports Alchemy, use it
   if (chain.rpcUrls.alchemy && apiKeys.alchemy) {
-    return `${chain.rpcUrls.alchemy.http[0]}${apiKeys.alchemy}`;
+    return `${chain.rpcUrls.alchemy.http[0]}/${apiKeys.alchemy}`;
   }
-
-  // Add more provider logic here as needed
 
   // If no matches, return undefined to allow fallback to default providers
   return undefined;

@@ -36,11 +36,11 @@ export interface GroupedTokenBalance {
   totalBalance: bigint;
   balanceByChain: Record<
     number,
-    {
+    Array<{
       balance: bigint;
       address: string;
       tokenSymbol: string;
-    }
+    }>
   >;
 }
 
@@ -61,7 +61,7 @@ export function useTokenBalances() {
       setError(null);
 
       try {
-        const balancePromises: Promise<TokenBalance[]>[] = [];
+        const allBalances: TokenBalance[] = [];
 
         // For each chain
         for (const chain of chains) {
@@ -70,41 +70,52 @@ export function useTokenBalances() {
             transport: keyManagerRpc(), // Uses default API keys from rpcUrlBuilder
           });
 
-          const chainPromises = tokens.map(async (token) => {
-            const tokenAddress = token.addresses[chain.id];
+          // Filter tokens available on this chain
+          const tokensOnChain = tokens.filter((token) => token.addresses[chain.id]);
 
-            if (!tokenAddress) return [];
+          if (tokensOnChain.length === 0) continue;
 
-            try {
-              const balance = await publicClient.readContract({
-                address: tokenAddress,
-                abi: erc20Abi,
-                functionName: "balanceOf",
-                args: [address],
-              });
+          try {
+            // Use multicall for all tokens on the chain
+            const contracts = tokensOnChain.map((token) => ({
+              address: token.addresses[chain.id],
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            }));
 
-              return [
-                {
+            const results = await publicClient.multicall({
+              contracts,
+              allowFailure: true,
+            });
+
+            // Process multicall results
+            results.forEach((result, index) => {
+              if (result.status === "success") {
+                const token = tokensOnChain[index];
+                allBalances.push({
                   chainId: chain.id,
                   tokenSymbol: token.symbol,
                   tokenName: token.name,
-                  balance,
+                  balance: result.result as bigint,
                   decimals: token.decimals,
-                  address: tokenAddress,
+                  address: token.addresses[chain.id],
                   groupId: token.groupId,
-                },
-              ];
-            } catch (err) {
-              console.error(`Error fetching balance for ${token.symbol} on ${chain.name}:`, err);
-              return [];
-            }
-          });
-
-          balancePromises.push(Promise.all(chainPromises).then((results) => results.flat()));
+                });
+              } else {
+                console.error(
+                  `Multicall failed for ${tokensOnChain[index].symbol} on ${chain.name}:`,
+                  result.error,
+                );
+              }
+            });
+          } catch (err) {
+            console.error(`Error with multicall on ${chain.name}:`, err);
+            // Skip this chain if multicall fails
+          }
         }
 
-        const allBalances = await Promise.all(balancePromises);
-        setBalances(allBalances.flat());
+        setBalances(allBalances);
       } catch (err) {
         console.error("Error fetching token balances:", err);
         setError("Failed to fetch token balances");
@@ -153,26 +164,36 @@ export function useTokenBalances() {
   // Group and sum balances by token group
   const balancesByGroup = balances.reduce<Record<string, GroupedTokenBalance>>((acc, balance) => {
     const { chainId, balance: amount, decimals, address, tokenSymbol, tokenName } = balance;
-    const groupId = balance.groupId || tokenSymbol.toLowerCase();
-
-    if (!acc[groupId]) {
+    // Use uppercase for groupId lookups for consistency
+    // This ensures that "USD" and "usd" are treated the same
+    const normalizedGroupId = (balance.groupId || tokenSymbol).toUpperCase();
+    // Use the normalized key for the acc object to ensure consistent grouping
+    if (!acc[normalizedGroupId]) {
       // For the display name/symbol, prioritize the simplest version (e.g., USDC over USDC.e)
-      acc[groupId] = {
-        groupId,
-        displaySymbol: groupId === "USD" ? "USD" : tokenSymbol,
-        displayName: groupId === "USD" ? "USD Stablecoins" : tokenName,
+      const isUSDGroup = normalizedGroupId === "USD";
+      acc[normalizedGroupId] = {
+        groupId: normalizedGroupId,
+        displaySymbol: isUSDGroup ? "USD" : tokenSymbol,
+        displayName: isUSDGroup ? "USD Stablecoins" : tokenName,
         decimals,
         totalBalance: 0n,
         balanceByChain: {},
       };
     }
 
-    acc[groupId].balanceByChain[chainId] = {
+    // Initialize the array for this chain if it doesn't exist
+    if (!acc[normalizedGroupId].balanceByChain[chainId]) {
+      acc[normalizedGroupId].balanceByChain[chainId] = [];
+    }
+
+    // Add this token to the array of tokens for this chain in this group
+    acc[normalizedGroupId].balanceByChain[chainId].push({
       balance: amount,
       address,
       tokenSymbol,
-    };
-    acc[groupId].totalBalance += amount;
+    });
+    // Add to the group's total balance
+    acc[normalizedGroupId].totalBalance += amount;
 
     return acc;
   }, {});

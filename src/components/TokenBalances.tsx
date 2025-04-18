@@ -49,9 +49,10 @@ export function TokenBalances() {
               </div>
 
               <div className="space-y-1 text-sm">
-                {Object.entries(groupBalance.balanceByChain).map(
-                  ([chainId, { balance, tokenSymbol }]) => {
+                {Object.entries(groupBalance.balanceByChain).map(([chainId, tokens]) => {
+                  return tokens.map(({ balance, tokenSymbol }) => {
                     const chain = chainMap[Number(chainId)];
+
                     if (!chain || balance === 0n) return null;
 
                     return (
@@ -65,8 +66,8 @@ export function TokenBalances() {
                         </span>
                       </div>
                     );
-                  },
-                )}
+                  });
+                })}
               </div>
             </div>
           ))}
