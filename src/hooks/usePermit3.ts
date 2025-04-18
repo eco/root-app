@@ -2,58 +2,63 @@
 
 import { useState } from "react";
 import { useAccount, useSignTypedData } from "wagmi";
-import { keccak256, encodePacked, toHex, Hex } from "viem";
+import { Hex, toHex } from "viem";
 import { TokenBalance } from "./useTokenBalances";
+import {
+  createUnhingedProofFromAllLeaves,
+  encodeChainAllowances,
+} from "@/utils/createUnhingedProof";
 
 // Constants for Permit3 domain
 const PERMIT3_DOMAIN_NAME = "Permit3";
 const PERMIT3_DOMAIN_VERSION = "1";
 
 // The verified Permit3 contract addresses
-const PERMIT3_ADDRESSES: Record<number, `0x${string}`> = {
-  1: "0x6D3c85960F0b42D0eFac0c79DEF4D618223B0C65", // Ethereum Mainnet
-  137: "0x6D3c85960F0b42D0eFac0c79DEF4D618223B0C65", // Polygon
-  42161: "0x6D3c85960F0b42D0eFac0c79DEF4D618223B0C65", // Arbitrum
-  8453: "0x6D3c85960F0b42D0eFac0c79DEF4D618223B0C65", // Base
+export const PERMIT3_ADDRESSES: Record<number, Hex> = {
+  1: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Ethereum Mainnet
+  137: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Polygon
+  42161: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Arbitrum
+  8453: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Base
 };
-
-// The hash of the AllowanceOrTransfer type for hashing
-const ALLOWANCE_OR_TRANSFER_TYPEHASH = keccak256(
-  encodePacked(
-    ["string"],
-    [
-      "AllowanceOrTransfer(uint48 modeOrExpiration,address token,address account,uint160 amountDelta)",
-    ],
-  ),
-);
-
-// The hash of the UnhingedCommitment type for hashing
-const UNHINGED_COMMITMENT_TYPEHASH = keccak256(
-  encodePacked(["string"], ["UnhingedCommitment(AllowanceOrTransfer[] allowanceOrTransfer)"]),
-);
 
 export type AllowanceOrTransfer = {
   modeOrExpiration: number;
   token: Hex;
-  account: `0x${string}`;
+  account: Hex;
   amountDelta: bigint;
+};
+
+export type ChainPermits = {
+  chainId: bigint;
+  permits: AllowanceOrTransfer[];
+};
+
+export type UnhingedProof = {
+  nodes: Hex[];
+  counts: Hex;
+};
+
+export type Permit3Proof = {
+  permits: ChainPermits;
+  unhingedProof: UnhingedProof;
 };
 
 export type Permit3SignatureResult = {
   signature: string;
   deadline: bigint;
-  signatureData: {
-    salt: `0x${string}`;
-    timestamp: number;
-    unhingedRoot: `0x${string}`;
-    allowances: AllowanceOrTransfer[];
-  };
+  chainId: number; // The original chain ID from the signature
+  leafs: Hex[]; // The original chain ID from the signature
+  owner: Hex;
+  salt: Hex;
+  timestamp: number;
+  // Store all permits by chain ID for easy filtering
+  permitsByChain: Record<number, AllowanceOrTransfer[]>;
 };
 
 export type UsePermit3Result = {
   generatePermit3Signature: (
     tokenBalances: TokenBalance[],
-    recipient: `0x${string}`,
+    recipient: Hex,
   ) => Promise<Permit3SignatureResult | null>;
   resetSignature: () => void;
   isLoading: boolean;
@@ -68,7 +73,7 @@ export function usePermit3(): UsePermit3Result {
   // Generate a Permit3 signature for selected tokens
   const generatePermit3Signature = async (
     tokenBalances: TokenBalance[],
-    recipient: `0x${string}`,
+    recipient: Hex,
   ): Promise<Permit3SignatureResult | null> => {
     if (!address || !recipient || tokenBalances.length === 0) {
       return null;
@@ -85,7 +90,7 @@ export function usePermit3(): UsePermit3Result {
     }
 
     // Create random salt for the signature
-    const salt = toHex(crypto.getRandomValues(new Uint8Array(32))) as `0x${string}`;
+    const salt = toHex(crypto.getRandomValues(new Uint8Array(32))) as Hex;
 
     // Set deadline 24 hours from now (in seconds)
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 60 * 24);
@@ -93,56 +98,41 @@ export function usePermit3(): UsePermit3Result {
     // Current timestamp (in seconds)
     const timestamp = Math.floor(Date.now() / 1000);
 
-    // Create AllowanceOrTransfer objects for each token
-    const allowances: AllowanceOrTransfer[] = tokenBalances.map((token) => ({
-      // Mode 0 is a Transfer in Permit3
-      modeOrExpiration: 0,
-      token: token.address as Hex,
-      account: recipient,
-      // For maximum approval/transfer amount
-      amountDelta: token.balance,
-    }));
+    // Organize permits by chain ID first
+    const permitsByChain: Record<number, AllowanceOrTransfer[]> = {};
 
-    if (allowances.length === 0) {
-      console.error("No valid tokens found for the specified chain");
+    if (tokenBalances.length === 0) {
+      console.error("No valid tokens found for any chain");
       return null;
     }
 
-    // Hash each AllowanceOrTransfer
-    const allowanceHashes = allowances.map((allowance) =>
-      keccak256(
-        encodePacked(
-          ["bytes32", "uint48", "address", "address", "uint160"],
-          [
-            ALLOWANCE_OR_TRANSFER_TYPEHASH,
-            allowance.modeOrExpiration,
-            allowance.token as `0x${string}`,
-            allowance.account,
-            allowance.amountDelta,
-          ],
-        ),
-      ),
+    // Group all tokens by chain ID
+    tokenBalances.forEach((token) => {
+      if (token.balance > 0n) {
+        const tokenChainId = token.chainId;
+
+        if (!permitsByChain[tokenChainId]) {
+          permitsByChain[tokenChainId] = [];
+        }
+
+        // Create a permit for this token
+        const allowance = {
+          modeOrExpiration: 0, // Transfer mode
+          token: token.address as Hex,
+          account: recipient,
+          amountDelta: token.balance,
+        };
+
+        permitsByChain[tokenChainId].push(allowance);
+      }
+    });
+
+    // Generate hash for each chain's permits
+    const chainHashes: Hex[] = Object.entries(permitsByChain).map(([chainIdStr, chainAllowances]) =>
+      encodeChainAllowances(BigInt(chainIdStr), chainAllowances),
     );
 
-    // Create the unhinged root (combines all allowance hashes)
-    // For multiple tokens, we need to combine all hashes
-    let combinedHash = allowanceHashes[0];
-    for (let i = 1; i < allowanceHashes.length; i++) {
-      combinedHash = keccak256(
-        encodePacked(
-          ["bytes32", "bytes32"],
-          [combinedHash as `0x${string}`, allowanceHashes[i] as `0x${string}`],
-        ),
-      );
-    }
-
-    // Final unhinged root hash
-    const unhingedRoot = keccak256(
-      encodePacked(
-        ["bytes32", "bytes32"],
-        [UNHINGED_COMMITMENT_TYPEHASH, combinedHash as `0x${string}`],
-      ),
-    ) as `0x${string}`;
+    const { root: unhingedRoot } = createUnhingedProofFromAllLeaves(chainHashes, 0);
 
     // EIP-712 domain and types for signing
     const domain = {
@@ -153,7 +143,7 @@ export function usePermit3(): UsePermit3Result {
     };
 
     const types = {
-      SignedPermit3: [
+      SignedUnhingedPermit3: [
         { name: "owner", type: "address" },
         { name: "salt", type: "bytes32" },
         { name: "deadline", type: "uint256" },
@@ -175,7 +165,7 @@ export function usePermit3(): UsePermit3Result {
       const signature = await signTypedDataAsync({
         domain,
         types,
-        primaryType: "SignedPermit3",
+        primaryType: "SignedUnhingedPermit3",
         message,
       });
 
@@ -184,12 +174,12 @@ export function usePermit3(): UsePermit3Result {
       return {
         signature,
         deadline,
-        signatureData: {
-          salt,
-          timestamp,
-          unhingedRoot,
-          allowances,
-        },
+        chainId,
+        leafs: chainHashes,
+        owner: address,
+        salt,
+        timestamp,
+        permitsByChain,
       };
     } catch (error) {
       console.error("Error signing Permit3 message:", error);

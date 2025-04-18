@@ -17,13 +17,35 @@ export const permit3Abi = [
     name: "ECDSAInvalidSignatureS",
     type: "error",
   },
+  { inputs: [], name: "HasPreHashButEmptyNodes", type: "error" },
+  {
+    inputs: [
+      { internalType: "bool", name: "hasPreHash", type: "bool" },
+      { internalType: "bytes32", name: "preHashValue", type: "bytes32" },
+    ],
+    name: "InconsistentPreHashFlag",
+    type: "error",
+  },
   {
     inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
     name: "InsufficientAllowance",
     type: "error",
   },
+  {
+    inputs: [
+      { internalType: "uint256", name: "expected", type: "uint256" },
+      { internalType: "uint256", name: "actual", type: "uint256" },
+    ],
+    name: "InvalidNodeArrayLength",
+    type: "error",
+  },
+  { inputs: [], name: "InvalidParameters", type: "error" },
   { inputs: [], name: "InvalidShortString", type: "error" },
   { inputs: [], name: "InvalidSignature", type: "error" },
+  { inputs: [], name: "InvalidSubtreeProof", type: "error" },
+  { inputs: [], name: "InvalidUnhingedProof", type: "error" },
+  { inputs: [], name: "InvalidWitnessSignature", type: "error" },
+  { inputs: [], name: "InvalidWitnessTypeString", type: "error" },
   { inputs: [], name: "NonceAlreadyUsed", type: "error" },
   {
     inputs: [{ internalType: "address", name: "token", type: "address" }],
@@ -72,7 +94,7 @@ export const permit3Abi = [
     inputs: [
       { indexed: true, internalType: "address", name: "owner", type: "address" },
       { indexed: true, internalType: "address", name: "token", type: "address" },
-      { indexed: true, internalType: "address", name: "account", type: "address" },
+      { indexed: true, internalType: "address", name: "spender", type: "address" },
       { indexed: false, internalType: "uint160", name: "amount", type: "uint160" },
       { indexed: false, internalType: "uint48", name: "expiration", type: "uint48" },
       { indexed: false, internalType: "uint48", name: "timestamp", type: "uint48" },
@@ -103,6 +125,27 @@ export const permit3Abi = [
   },
   {
     inputs: [],
+    name: "PERMIT_BATCH_WITNESS_TYPEHASH_STUB",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "pure",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "PERMIT_UNHINGED_WITNESS_TYPEHASH_STUB",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "pure",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "PERMIT_WITNESS_TYPEHASH_STUB",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "pure",
+    type: "function",
+  },
+  {
+    inputs: [],
     name: "SIGNED_CANCEL_PERMIT3_TYPEHASH",
     outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
     stateMutability: "view",
@@ -111,6 +154,13 @@ export const permit3Abi = [
   {
     inputs: [],
     name: "SIGNED_PERMIT3_TYPEHASH",
+    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "SIGNED_UNHINGED_PERMIT3_TYPEHASH",
     outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
     stateMutability: "view",
     type: "function",
@@ -161,6 +211,33 @@ export const permit3Abi = [
     inputs: [
       {
         components: [
+          { internalType: "uint256", name: "chainId", type: "uint256" },
+          {
+            components: [
+              { internalType: "uint48", name: "modeOrExpiration", type: "uint48" },
+              { internalType: "address", name: "token", type: "address" },
+              { internalType: "address", name: "account", type: "address" },
+              { internalType: "uint160", name: "amountDelta", type: "uint160" },
+            ],
+            internalType: "struct IPermit3.AllowanceOrTransfer[]",
+            name: "permits",
+            type: "tuple[]",
+          },
+        ],
+        internalType: "struct IPermit3.ChainPermits",
+        name: "permits",
+        type: "tuple",
+      },
+    ],
+    name: "hashChainPermits",
+    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
+    stateMutability: "pure",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
           { internalType: "uint64", name: "chainId", type: "uint64" },
           { internalType: "bytes32[]", name: "salts", type: "bytes32[]" },
         ],
@@ -180,7 +257,6 @@ export const permit3Abi = [
       { internalType: "uint256", name: "deadline", type: "uint256" },
       {
         components: [
-          { internalType: "bytes32", name: "preHash", type: "bytes32" },
           {
             components: [
               { internalType: "uint64", name: "chainId", type: "uint64" },
@@ -190,9 +266,9 @@ export const permit3Abi = [
             name: "invalidations",
             type: "tuple",
           },
-          { internalType: "bytes32[]", name: "followingHashes", type: "bytes32[]" },
+          { internalType: "bytes32", name: "unhingedRoot", type: "bytes32" },
         ],
-        internalType: "struct INonceManager.CancelPermit3Proof",
+        internalType: "struct INonceManager.UnhingedCancelPermitProof",
         name: "proof",
         type: "tuple",
       },
@@ -265,7 +341,38 @@ export const permit3Abi = [
       { internalType: "uint48", name: "timestamp", type: "uint48" },
       {
         components: [
-          { internalType: "bytes32", name: "preHash", type: "bytes32" },
+          { internalType: "uint256", name: "chainId", type: "uint256" },
+          {
+            components: [
+              { internalType: "uint48", name: "modeOrExpiration", type: "uint48" },
+              { internalType: "address", name: "token", type: "address" },
+              { internalType: "address", name: "account", type: "address" },
+              { internalType: "uint160", name: "amountDelta", type: "uint160" },
+            ],
+            internalType: "struct IPermit3.AllowanceOrTransfer[]",
+            name: "permits",
+            type: "tuple[]",
+          },
+        ],
+        internalType: "struct IPermit3.ChainPermits",
+        name: "chain",
+        type: "tuple",
+      },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "permit",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "bytes32", name: "salt", type: "bytes32" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+      { internalType: "uint48", name: "timestamp", type: "uint48" },
+      {
+        components: [
           {
             components: [
               { internalType: "uint256", name: "chainId", type: "uint256" },
@@ -285,9 +392,17 @@ export const permit3Abi = [
             name: "permits",
             type: "tuple",
           },
-          { internalType: "bytes32[]", name: "followingHashes", type: "bytes32[]" },
+          {
+            components: [
+              { internalType: "bytes32[]", name: "nodes", type: "bytes32[]" },
+              { internalType: "bytes32", name: "counts", type: "bytes32" },
+            ],
+            internalType: "struct IUnhingedMerkleTree.UnhingedProof",
+            name: "unhingedProof",
+            type: "tuple",
+          },
         ],
-        internalType: "struct IPermit3.Permit3Proof",
+        internalType: "struct IPermit3.UnhingedPermitProof",
         name: "proof",
         type: "tuple",
       },
@@ -323,9 +438,61 @@ export const permit3Abi = [
         name: "chain",
         type: "tuple",
       },
+      { internalType: "bytes32", name: "witness", type: "bytes32" },
+      { internalType: "string", name: "witnessTypeString", type: "string" },
       { internalType: "bytes", name: "signature", type: "bytes" },
     ],
-    name: "permit",
+    name: "permitWitnessTransferFrom",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "bytes32", name: "salt", type: "bytes32" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+      { internalType: "uint48", name: "timestamp", type: "uint48" },
+      {
+        components: [
+          {
+            components: [
+              { internalType: "uint256", name: "chainId", type: "uint256" },
+              {
+                components: [
+                  { internalType: "uint48", name: "modeOrExpiration", type: "uint48" },
+                  { internalType: "address", name: "token", type: "address" },
+                  { internalType: "address", name: "account", type: "address" },
+                  { internalType: "uint160", name: "amountDelta", type: "uint160" },
+                ],
+                internalType: "struct IPermit3.AllowanceOrTransfer[]",
+                name: "permits",
+                type: "tuple[]",
+              },
+            ],
+            internalType: "struct IPermit3.ChainPermits",
+            name: "permits",
+            type: "tuple",
+          },
+          {
+            components: [
+              { internalType: "bytes32[]", name: "nodes", type: "bytes32[]" },
+              { internalType: "bytes32", name: "counts", type: "bytes32" },
+            ],
+            internalType: "struct IUnhingedMerkleTree.UnhingedProof",
+            name: "unhingedProof",
+            type: "tuple",
+          },
+        ],
+        internalType: "struct IPermit3.UnhingedPermitProof",
+        name: "proof",
+        type: "tuple",
+      },
+      { internalType: "bytes32", name: "witness", type: "bytes32" },
+      { internalType: "string", name: "witnessTypeString", type: "string" },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "permitWitnessTransferFrom",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

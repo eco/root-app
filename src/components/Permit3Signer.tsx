@@ -37,7 +37,7 @@ export function Permit3Signer() {
   const [selectedToken, setSelectedToken] = useState(tokens[0]);
 
   // For a real implementation, this would come from a smart contract or database
-  const permit3ContractAddress = "0x6D3c85960F0b42D0eFac0c79DEF4D618223B0C65" as Hex; // mainnet Permit3 contract
+  const permit3ContractAddress = "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889" as Hex; // mainnet Permit3 contract
   // This would normally be the address of a spender contract
   const spenderAddress = walletAddress!;
 

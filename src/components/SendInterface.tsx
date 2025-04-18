@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSwitchNetwork, usePublicClient } from "wagmi";
 import { shortenAddress } from "@/utils/format";
 import { useTokenBalances, TokenBalance } from "@/hooks/useTokenBalances";
 import { formatTokenAmount } from "@/utils/format";
 import { chains } from "@/config/chains";
 import { z } from "zod";
 import { isAddress } from "viem";
-import { usePermit3, Permit3SignatureResult } from "@/hooks/usePermit3";
+import { usePermit3, Permit3SignatureResult, PERMIT3_ADDRESSES } from "@/hooks/usePermit3";
+import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
@@ -61,11 +62,19 @@ export function SendInterface() {
     // We're not using the error directly, but it's logged inside the hook
   } = usePermit3();
 
+  // Hook for calling the Permit3 contract
+  const { executePermit3, isLoading: isPermit3TxLoading } = usePermit3Contract();
+
+  // Hook for switching networks and interacting with the blockchain
+  const { switchNetwork, isLoading: isSwitchingNetwork } = useSwitchNetwork();
+  const publicClient = usePublicClient();
+
   // State for tracking transaction submission
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [permit3Result, setPermit3Result] = useState<Permit3SignatureResult | null>(null);
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
   const [showFullSignature, setShowFullSignature] = useState(false);
+  const [chainTxHashes, setChainTxHashes] = useState<Record<number, `0x${string}`>>({});
 
   // Initialize selected tokens state from balances
   const [selectedTokens, setSelectedTokens] = useState<SelectedToken[]>([]);
@@ -133,12 +142,46 @@ export function SendInterface() {
     return formatTokenAmount(totalBalance, decimals);
   };
 
+  // Function to handle calling the Permit3 contract
+  const handleExecutePermit3 = async (chainId: number) => {
+    if (!permit3Result || !switchNetwork) return;
+
+    try {
+      // Get the current chain ID to check if we need to switch networks
+      const currentChain = publicClient?.chain?.id;
+
+      // Switch to the correct network if needed
+      if (currentChain !== chainId && switchNetwork) {
+        console.log(`Switching from chain ${currentChain} to chain ${chainId}`);
+        await switchNetwork(chainId);
+
+        // Give a moment for the UI to update after chain switch
+        // This helps ensure the publicClient has the new chain when we execute the transaction
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      // Call the Permit3 contract with the specific chainId
+      const hash = await executePermit3(permit3Result, chainId);
+
+      if (hash) {
+        // Store the transaction hash for this chain
+        setChainTxHashes((prev) => ({
+          ...prev,
+          [chainId]: hash,
+        }));
+      }
+    } catch (error) {
+      console.error(`Error executing Permit3 on chain ${chainId}:`, error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Clear previous errors
     setErrors({});
     setPermit3Result(null);
+    setChainTxHashes({});
     setIsSubmitting(true);
 
     try {
@@ -188,7 +231,7 @@ export function SendInterface() {
         recipient: recipientAddress,
         signature: result.signature,
         deadline: result.deadline.toString(),
-        permit3Data: result.signatureData,
+        permitsByChain: result.permitsByChain,
       });
 
       // In a real app, you would now submit this data to your backend or directly to a smart contract
@@ -365,6 +408,71 @@ export function SendInterface() {
               This signature can be used with the Permit3 contract to approve and transfer tokens.
             </p>
 
+            {/* Chain Action Buttons */}
+            <div className="mb-4">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
+                Execute on Chain:
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {/* Get unique chainIds from the selected tokens */}
+                {Array.from(
+                  new Set(
+                    selectedTokens
+                      .filter((t) => t.isSelected && t.balance > 0n)
+                      .map((t) => t.chainId),
+                  ),
+                )
+                  .filter((chainId) => PERMIT3_ADDRESSES[chainId]) // Only show chains with Permit3 contract
+                  .map((chainId) => {
+                    const chainInfo = chains.find((c) => c.id === chainId);
+                    const txHash = chainTxHashes[chainId];
+                    const isLoading = isPermit3TxLoading && permit3Result.chainId === chainId;
+
+                    return (
+                      <div key={chainId} className="flex flex-col items-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleExecutePermit3(chainId);
+                          }}
+                          disabled={isLoading || isSwitchingNetwork || !!txHash}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center justify-center min-w-24 ${
+                            txHash
+                              ? "bg-green-600 text-white"
+                              : isLoading || isSwitchingNetwork
+                                ? "bg-gray-400 text-white"
+                                : "bg-blue-600 text-white hover:bg-blue-700"
+                          }`}
+                        >
+                          {txHash ? (
+                            <span>✓ Success</span>
+                          ) : isLoading ? (
+                            <span>Submitting...</span>
+                          ) : isSwitchingNetwork ? (
+                            <span>Switching...</span>
+                          ) : (
+                            <span>Execute on {chainInfo?.name || `Chain ${chainId}`}</span>
+                          )}
+                        </button>
+
+                        {txHash && (
+                          <a
+                            href={`${chainInfo?.blockExplorers?.default.url || "#"}/tx/${txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 mt-1 hover:underline"
+                          >
+                            View Transaction
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
             {/* Copy button and feedback */}
             <div className="flex justify-end mb-2">
               <button
@@ -376,13 +484,10 @@ export function SendInterface() {
                     {
                       signature: permit3Result.signature,
                       deadline: permit3Result.deadline.toString(),
-                      signatureData: {
-                        ...permit3Result.signatureData,
-                        allowances: permit3Result.signatureData.allowances.map((a) => ({
-                          ...a,
-                          amountDelta: a.amountDelta.toString(),
-                        })),
-                      },
+                      chainId: permit3Result.chainId,
+                      owner: permit3Result.owner,
+                      salt: permit3Result.salt,
+                      timestamp: permit3Result.timestamp,
                     },
                     null,
                     2,
@@ -442,24 +547,15 @@ export function SendInterface() {
                     <span className="text-gray-500 dark:text-gray-400">Salt:</span>
                     <span className="break-all">
                       {showFullSignature
-                        ? permit3Result.signatureData.salt
-                        : `${permit3Result.signatureData.salt.substring(0, 10)}...`}
+                        ? permit3Result.salt
+                        : `${permit3Result.salt.substring(0, 10)}...`}
                     </span>
 
                     <span className="text-gray-500 dark:text-gray-400">Timestamp:</span>
-                    <span>
-                      {new Date(permit3Result.signatureData.timestamp * 1000).toLocaleString()}
-                    </span>
+                    <span>{new Date(permit3Result.timestamp * 1000).toLocaleString()}</span>
 
                     <span className="text-gray-500 dark:text-gray-400">Deadline:</span>
                     <span>{new Date(Number(permit3Result.deadline) * 1000).toLocaleString()}</span>
-
-                    <span className="text-gray-500 dark:text-gray-400">UnhingedRoot:</span>
-                    <span className="break-all">
-                      {showFullSignature
-                        ? permit3Result.signatureData.unhingedRoot
-                        : `${permit3Result.signatureData.unhingedRoot.substring(0, 10)}...`}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -479,30 +575,35 @@ export function SendInterface() {
                       </tr>
                     </thead>
                     <tbody>
-                      {permit3Result.signatureData.allowances.map((allowance, index) => {
-                        // Find the matching token to show symbol and format amount
-                        const matchingToken = selectedTokens.find(
-                          (t) =>
-                            t.isSelected &&
-                            t.address.toLowerCase() === allowance.token.toLowerCase(),
-                        );
-                        return (
-                          <tr key={index} className="border-t border-gray-300 dark:border-gray-700">
-                            <td className="py-1 px-2 font-medium">
-                              {matchingToken?.tokenSymbol || "Unknown"}
-                            </td>
-                            <td className="py-1 px-2">
-                              {allowance.account.substring(0, 6)}...
-                              {allowance.account.substring(38)}
-                            </td>
-                            <td className="py-1 px-2 text-right">
-                              {matchingToken
-                                ? formatTokenAmount(allowance.amountDelta, matchingToken.decimals)
-                                : allowance.amountDelta.toString()}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {Object.values(permit3Result.permitsByChain)
+                        .flat()
+                        .map((allowance, index) => {
+                          // Find the matching token to show symbol and format amount
+                          const matchingToken = selectedTokens.find(
+                            (t) =>
+                              t.isSelected &&
+                              t.address.toLowerCase() === allowance.token.toLowerCase(),
+                          );
+                          return (
+                            <tr
+                              key={index}
+                              className="border-t border-gray-300 dark:border-gray-700"
+                            >
+                              <td className="py-1 px-2 font-medium">
+                                {matchingToken?.tokenSymbol || "Unknown"}
+                              </td>
+                              <td className="py-1 px-2">
+                                {allowance.account.substring(0, 6)}...
+                                {allowance.account.substring(38)}
+                              </td>
+                              <td className="py-1 px-2 text-right">
+                                {matchingToken
+                                  ? formatTokenAmount(allowance.amountDelta, matchingToken.decimals)
+                                  : allowance.amountDelta.toString()}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>
