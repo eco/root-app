@@ -148,9 +148,6 @@ export function SendInterface() {
         amount: validatedData.amount,
         recipient: validatedData.recipient,
       });
-
-      // In a real app, you would handle the transaction here
-      alert("Transaction validated successfully!");
     } catch (error) {
       if (error instanceof z.ZodError) {
         // Format and set error messages
