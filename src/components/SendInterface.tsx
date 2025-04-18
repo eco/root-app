@@ -8,6 +8,7 @@ import { formatTokenAmount } from "@/utils/format";
 import { chains } from "@/config/chains";
 import { z } from "zod";
 import { isAddress } from "viem";
+import { usePermit3, Permit3SignatureResult } from "@/hooks/usePermit3";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
@@ -52,6 +53,19 @@ export function SendInterface() {
     selectedTokens?: string;
     form?: string;
   }>({});
+
+  // Get the generatePermit3Signature function
+  const {
+    generatePermit3Signature,
+    isLoading: isPermit3Loading,
+    // We're not using the error directly, but it's logged inside the hook
+  } = usePermit3();
+
+  // State for tracking transaction submission
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [permit3Result, setPermit3Result] = useState<Permit3SignatureResult | null>(null);
+  const [showCopiedMessage, setShowCopiedMessage] = useState(false);
+  const [showFullSignature, setShowFullSignature] = useState(false);
 
   // Initialize selected tokens state from balances
   const [selectedTokens, setSelectedTokens] = useState<SelectedToken[]>([]);
@@ -119,16 +133,19 @@ export function SendInterface() {
     return formatTokenAmount(totalBalance, decimals);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Clear previous errors
     setErrors({});
-
-    const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
-    const availableBalance = getTotalAvailableBalance();
+    setPermit3Result(null);
+    setIsSubmitting(true);
 
     try {
+      // Get selected tokens
+      const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
+      const availableBalance = getTotalAvailableBalance();
+
       // Validate form data using Zod
       const validatedData = sendFormSchema.parse({
         recipient: recipient || address || "",
@@ -137,17 +154,45 @@ export function SendInterface() {
         availableBalance,
       });
 
-      // If validation passes, proceed with transaction
-      console.log("Validated data:", {
+      // If validation passes, proceed with Permit3 signature
+      const recipientAddress = validatedData.recipient as `0x${string}`;
+
+      // Check if we have tokens to sign for
+      if (selectedTokensList.length === 0) {
+        setErrors({ selectedTokens: "No tokens selected for transfer" });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Generate Permit3 signature for this chain and tokens
+      const result = await generatePermit3Signature(selectedTokensList, recipientAddress);
+
+      if (!result) {
+        setErrors({ form: "Failed to generate Permit3 signature" });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Store the result and log (in a real app, you would submit this to your backend or smart contract)
+      setPermit3Result(result);
+
+      // Log the transaction details and signature
+      console.log("Transaction prepared with Permit3 signature:", {
         tokens: selectedTokensList.map((t) => ({
           chainId: t.chainId,
           chainName: chainMap[t.chainId]?.name,
           tokenSymbol: t.tokenSymbol,
           address: t.address,
+          amount: t.balance.toString(),
         })),
-        amount: validatedData.amount,
-        recipient: validatedData.recipient,
+        recipient: recipientAddress,
+        signature: result.signature,
+        deadline: result.deadline.toString(),
+        permit3Data: result.signatureData,
       });
+
+      // In a real app, you would now submit this data to your backend or directly to a smart contract
+      // that uses the Permit3 contract for approving and transferring tokens
     } catch (error) {
       if (error instanceof z.ZodError) {
         // Format and set error messages
@@ -167,8 +212,10 @@ export function SendInterface() {
       } else {
         // Handle unexpected errors
         setErrors({ form: "An unexpected error occurred" });
-        console.error("Validation error:", error);
+        console.error("Submission error:", error);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -293,6 +340,8 @@ export function SendInterface() {
         <button
           type="submit"
           disabled={
+            isSubmitting ||
+            isPermit3Loading ||
             !recipient ||
             !amount ||
             Number(amount) <= 0 ||
@@ -300,8 +349,167 @@ export function SendInterface() {
           }
           className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 text-white rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
-          Send {getTotalSelectedBalance()}
+          {isSubmitting || isPermit3Loading
+            ? "Signing Permit3..."
+            : permit3Result
+              ? "✓ Signature Generated"
+              : `Send ${getTotalSelectedBalance()}`}
         </button>
+
+        {/* Show Permit3 signature result if available */}
+        {permit3Result && (
+          <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+            <h3 className="text-sm font-medium mb-1">Permit3 Signature Generated</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Signature generated for {selectedTokens.filter((t) => t.isSelected).length} token(s).
+              This signature can be used with the Permit3 contract to approve and transfer tokens.
+            </p>
+
+            {/* Copy button and feedback */}
+            <div className="flex justify-end mb-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  // Create a JSON string with all relevant data
+                  const dataToCopy = JSON.stringify(
+                    {
+                      signature: permit3Result.signature,
+                      deadline: permit3Result.deadline.toString(),
+                      signatureData: {
+                        ...permit3Result.signatureData,
+                        allowances: permit3Result.signatureData.allowances.map((a) => ({
+                          ...a,
+                          amountDelta: a.amountDelta.toString(),
+                        })),
+                      },
+                    },
+                    null,
+                    2,
+                  );
+
+                  // Copy to clipboard
+                  navigator.clipboard
+                    .writeText(dataToCopy)
+                    .then(() => {
+                      setShowCopiedMessage(true);
+                      setTimeout(() => setShowCopiedMessage(false), 2000);
+                    })
+                    .catch((err) => console.error("Failed to copy: ", err));
+                }}
+                className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
+              >
+                <span>Copy All Data</span>
+                {showCopiedMessage && (
+                  <span className="ml-2 text-xs bg-white text-blue-600 px-1 rounded">
+                    ✓ Copied!
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Signature data */}
+            <div className="space-y-3">
+              {/* Signature */}
+              <div>
+                <div className="flex justify-between items-center">
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Signature:</p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowFullSignature(!showFullSignature);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {showFullSignature ? "Show Less" : "Show Full"}
+                  </button>
+                </div>
+                <p className="text-xs break-all font-mono bg-gray-200 dark:bg-gray-800 p-2 rounded">
+                  {showFullSignature
+                    ? permit3Result.signature
+                    : `${permit3Result.signature.substring(0, 40)}...`}
+                </p>
+              </div>
+
+              {/* Other Permit3 data */}
+              <div>
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  Permit3 Data:
+                </p>
+                <div className="bg-gray-200 dark:bg-gray-800 p-2 rounded text-xs font-mono">
+                  <div className="grid grid-cols-2 gap-1">
+                    <span className="text-gray-500 dark:text-gray-400">Salt:</span>
+                    <span className="break-all">
+                      {showFullSignature
+                        ? permit3Result.signatureData.salt
+                        : `${permit3Result.signatureData.salt.substring(0, 10)}...`}
+                    </span>
+
+                    <span className="text-gray-500 dark:text-gray-400">Timestamp:</span>
+                    <span>
+                      {new Date(permit3Result.signatureData.timestamp * 1000).toLocaleString()}
+                    </span>
+
+                    <span className="text-gray-500 dark:text-gray-400">Deadline:</span>
+                    <span>{new Date(Number(permit3Result.deadline) * 1000).toLocaleString()}</span>
+
+                    <span className="text-gray-500 dark:text-gray-400">UnhingedRoot:</span>
+                    <span className="break-all">
+                      {showFullSignature
+                        ? permit3Result.signatureData.unhingedRoot
+                        : `${permit3Result.signatureData.unhingedRoot.substring(0, 10)}...`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Token Allowances */}
+              <div>
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  Token Allowances:
+                </p>
+                <div className="bg-gray-200 dark:bg-gray-800 rounded text-xs overflow-x-auto">
+                  <table className="w-full min-w-full">
+                    <thead>
+                      <tr className="bg-gray-300 dark:bg-gray-700">
+                        <th className="py-1 px-2 text-left">Token</th>
+                        <th className="py-1 px-2 text-left">Recipient</th>
+                        <th className="py-1 px-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {permit3Result.signatureData.allowances.map((allowance, index) => {
+                        // Find the matching token to show symbol and format amount
+                        const matchingToken = selectedTokens.find(
+                          (t) =>
+                            t.isSelected &&
+                            t.address.toLowerCase() === allowance.token.toLowerCase(),
+                        );
+                        return (
+                          <tr key={index} className="border-t border-gray-300 dark:border-gray-700">
+                            <td className="py-1 px-2 font-medium">
+                              {matchingToken?.tokenSymbol || "Unknown"}
+                            </td>
+                            <td className="py-1 px-2">
+                              {allowance.account.substring(0, 6)}...
+                              {allowance.account.substring(38)}
+                            </td>
+                            <td className="py-1 px-2 text-right">
+                              {matchingToken
+                                ? formatTokenAmount(allowance.amountDelta, matchingToken.decimals)
+                                : allowance.amountDelta.toString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Token Selector Modal */}
