@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { createPublicClient } from "viem";
 import { tokens } from "@/config/tokens";
@@ -44,90 +44,84 @@ export interface GroupedTokenBalance {
   >;
 }
 
+// Fetch balances function separated for re-usability
+async function fetchBalances(walletAddress: string | undefined): Promise<TokenBalance[]> {
+  if (!walletAddress) {
+    return [];
+  }
+
+  const allBalances: TokenBalance[] = [];
+
+  // For each chain
+  for (const chain of chains) {
+    const publicClient = createPublicClient({
+      chain,
+      transport: keyManagerRpc(), // Uses default API keys from rpcUrlBuilder
+    });
+
+    // Filter tokens available on this chain
+    const tokensOnChain = tokens.filter((token) => token.addresses[chain.id]);
+
+    if (tokensOnChain.length === 0) continue;
+
+    try {
+      // Use multicall for all tokens on the chain
+      const contracts = tokensOnChain.map((token) => ({
+        address: token.addresses[chain.id],
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [walletAddress],
+      }));
+
+      const results = await publicClient.multicall({
+        contracts,
+        allowFailure: true,
+      });
+
+      // Process multicall results
+      results.forEach((result, index) => {
+        if (result.status === "success") {
+          const token = tokensOnChain[index];
+          allBalances.push({
+            chainId: chain.id,
+            tokenSymbol: token.symbol,
+            tokenName: token.name,
+            balance: result.result as bigint,
+            decimals: token.decimals,
+            address: token.addresses[chain.id],
+            groupId: token.groupId,
+          });
+        } else {
+          console.error(
+            `Multicall failed for ${tokensOnChain[index].symbol} on ${chain.name}:`,
+            result.error,
+          );
+        }
+      });
+    } catch (err) {
+      console.error(`Error with multicall on ${chain.name}:`, err);
+      // Skip this chain if multicall fails
+    }
+  }
+
+  return allBalances;
+}
+
 export function useTokenBalances() {
   const { address } = useAccount();
-  const [balances, setBalances] = useState<TokenBalance[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchBalances() {
-      if (!address) {
-        setBalances([]);
-        return;
-      }
+  const {
+    data: balances = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["tokenBalances", address],
+    queryFn: () => fetchBalances(address),
+    enabled: !!address,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
 
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const allBalances: TokenBalance[] = [];
-
-        // For each chain
-        for (const chain of chains) {
-          const publicClient = createPublicClient({
-            chain,
-            transport: keyManagerRpc(), // Uses default API keys from rpcUrlBuilder
-          });
-
-          // Filter tokens available on this chain
-          const tokensOnChain = tokens.filter((token) => token.addresses[chain.id]);
-
-          if (tokensOnChain.length === 0) continue;
-
-          try {
-            // Use multicall for all tokens on the chain
-            const contracts = tokensOnChain.map((token) => ({
-              address: token.addresses[chain.id],
-              abi: erc20Abi,
-              functionName: "balanceOf",
-              args: [address],
-            }));
-
-            const results = await publicClient.multicall({
-              contracts,
-              allowFailure: true,
-            });
-
-            // Process multicall results
-            results.forEach((result, index) => {
-              if (result.status === "success") {
-                const token = tokensOnChain[index];
-                allBalances.push({
-                  chainId: chain.id,
-                  tokenSymbol: token.symbol,
-                  tokenName: token.name,
-                  balance: result.result as bigint,
-                  decimals: token.decimals,
-                  address: token.addresses[chain.id],
-                  groupId: token.groupId,
-                });
-              } else {
-                console.error(
-                  `Multicall failed for ${tokensOnChain[index].symbol} on ${chain.name}:`,
-                  result.error,
-                );
-              }
-            });
-          } catch (err) {
-            console.error(`Error with multicall on ${chain.name}:`, err);
-            // Skip this chain if multicall fails
-          }
-        }
-
-        setBalances(allBalances);
-      } catch (err) {
-        console.error("Error fetching token balances:", err);
-        setError("Failed to fetch token balances");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchBalances();
-  }, [address]);
-
-  // Group tokens by their groupId or symbol if no groupId
+  // Group tokens by their tokenSymbol or symbol if no tokenSymbol
   const balancesByToken = balances.reduce<
     Record<
       string,
@@ -203,6 +197,6 @@ export function useTokenBalances() {
     balancesByToken: Object.values(balancesByToken),
     balancesByGroup: Object.values(balancesByGroup),
     isLoading,
-    error,
+    error: error ? (error as Error).message : null,
   };
 }
