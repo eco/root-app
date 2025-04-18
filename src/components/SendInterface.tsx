@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useSwitchNetwork } from "wagmi";
+import { mainnet } from "wagmi/chains";
 import { formatTokenAmount, shortenAddress } from "@/utils/format";
 import { TokenBalance, useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
@@ -77,6 +78,7 @@ export function SendInterface() {
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
   const [showFullSignature, setShowFullSignature] = useState(false);
   const [chainTxHashes, setChainTxHashes] = useState<Record<number, `0x${string}`>>({});
+  const [isSwitchingToEthereum, setIsSwitchingToEthereum] = useState(false);
 
   // Initialize selected tokens state from balances
   const [selectedTokens, setSelectedTokens] = useState<SelectedToken[]>([]);
@@ -196,6 +198,28 @@ export function SendInterface() {
     setIsSubmitting(true);
 
     try {
+      // Ensure we're on Ethereum mainnet for sending tokens
+      const currentChain = publicClient?.chain?.id;
+      if (currentChain !== mainnet.id && switchNetwork) {
+        console.log(`Switching from chain ${currentChain} to Ethereum mainnet (${mainnet.id})`);
+        try {
+          setIsSwitchingToEthereum(true);
+          await switchNetwork(mainnet.id);
+          // Give a moment for the UI to update after chain switch
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (switchError) {
+          console.error("Error switching to Ethereum mainnet:", switchError);
+          setErrors({
+            form: "Failed to switch to Ethereum mainnet. Please switch manually and try again.",
+          });
+          setIsSubmitting(false);
+          setIsSwitchingToEthereum(false);
+          return;
+        } finally {
+          setIsSwitchingToEthereum(false);
+        }
+      }
+
       // Get selected tokens
       const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
       const availableBalance = getTotalAvailableBalance();
@@ -305,6 +329,12 @@ export function SendInterface() {
       </div>
 
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        {/* Network check info - only show when not on Ethereum */}
+        {publicClient?.chain?.id !== mainnet.id && (
+          <div className="p-3 mb-2 text-sm text-blue-600 bg-blue-100 dark:bg-blue-900 dark:text-blue-200 rounded-md">
+            Note: You will be switched to Ethereum network when sending tokens.
+          </div>
+        )}
         {errors.form && (
           <div className="p-3 mb-2 text-sm text-red-600 bg-red-100 rounded-md">{errors.form}</div>
         )}
@@ -414,6 +444,7 @@ export function SendInterface() {
             isSubmitting ||
             isPermit3Loading ||
             allowancesLoading ||
+            isSwitchingToEthereum ||
             !recipient ||
             !amount ||
             Number(amount) <= 0 ||
@@ -421,11 +452,13 @@ export function SendInterface() {
           }
           className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 text-white rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
-          {isSubmitting || isPermit3Loading
-            ? "Signing Permit3..."
-            : permit3Result
-              ? "✓ Signature Generated"
-              : `Send ${getTotalSelectedBalance()}`}
+          {isSwitchingToEthereum
+            ? "Switching to Ethereum..."
+            : isSubmitting || isPermit3Loading
+              ? "Signing Permit3..."
+              : permit3Result
+                ? "✓ Signature Generated"
+                : `Send ${getTotalSelectedBalance()}`}
         </button>
 
         {/* Show Permit3 signature result if available */}
