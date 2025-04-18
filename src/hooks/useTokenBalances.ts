@@ -186,7 +186,7 @@ export function useTokenBalances() {
       address,
       tokenSymbol,
     });
-    // Add to the group's total balance
+    // For now, add the full balance (we'll adjust this to use available balances in the component)
     acc[normalizedGroupId].totalBalance += amount;
 
     return acc;

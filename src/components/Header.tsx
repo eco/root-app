@@ -20,7 +20,7 @@ export function Header() {
   return (
     <header className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
       <div className="container mx-auto flex justify-between items-center">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">dApp</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Root dApp</h1>
 
         <div className="flex items-center gap-4">
           <button

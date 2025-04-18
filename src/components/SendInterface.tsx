@@ -10,9 +10,11 @@ import { z } from "zod";
 import { isAddress } from "viem";
 import { usePermit3, Permit3SignatureResult, PERMIT3_ADDRESSES } from "@/hooks/usePermit3";
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
+import { useTokenAllowances } from "@/hooks/useTokenAllowances";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
+  availableBalance?: bigint; // Add available balance
 };
 
 // Define validation schema with Zod
@@ -45,6 +47,7 @@ const sendFormSchema = z
 export function SendInterface() {
   const { address, isConnected } = useAccount();
   const { balances, isLoading } = useTokenBalances();
+  const { allowances, getAvailableBalance, isLoading: allowancesLoading } = useTokenAllowances();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [showTokenSelector, setShowTokenSelector] = useState(false);
@@ -84,17 +87,22 @@ export function SendInterface() {
 
   // Update selected tokens when balances change
   useEffect(() => {
-    if (balances.length > 0 && selectedTokens.length === 0) {
+    if (balances.length > 0 && allowances.length > 0 && selectedTokens.length === 0) {
       setSelectedTokens(
         balances
           .filter((balance) => balance.balance > 0n)
-          .map((balance) => ({
-            ...balance,
-            isSelected: true,
-          })),
+          .map((balance) => {
+            const availableBal = getAvailableBalance(balance, allowances);
+            return {
+              ...balance,
+              // Only select tokens that have an available balance
+              isSelected: availableBal > 0n,
+              availableBalance: availableBal,
+            };
+          }),
       );
     }
-  }, [balances, selectedTokens.length]);
+  }, [balances, allowances, selectedTokens.length, getAvailableBalance]);
 
   const handleRecipientChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setRecipient(e.target.value);
@@ -131,9 +139,14 @@ export function SendInterface() {
     const selectedTokensList = selectedTokens.filter((token) => token.isSelected);
     if (selectedTokensList.length === 0) return "0";
 
-    // Sum up the balances
+    // Sum up the available balances
     const totalBalance = selectedTokensList.reduce((total, token) => {
-      return total + token.balance;
+      // Use the cached availableBalance or calculate it if not available
+      const availableBal =
+        token.availableBalance !== undefined
+          ? token.availableBalance
+          : getAvailableBalance(token, allowances);
+      return total + availableBal;
     }, 0n);
 
     // For simplicity, we'll use 18 decimals (most common in ETH tokens)
@@ -207,8 +220,23 @@ export function SendInterface() {
         return;
       }
 
-      // Generate Permit3 signature for this chain and tokens
-      const result = await generatePermit3Signature(selectedTokensList, recipientAddress);
+      // Prepare tokens with available balances instead of full balances
+      const tokensWithAvailableBalances = selectedTokensList.map((token) => {
+        // Calculate or use cached available balance
+        const availableBal =
+          token.availableBalance !== undefined
+            ? token.availableBalance
+            : getAvailableBalance(token, allowances);
+
+        // Return a new token object with the available balance
+        return {
+          ...token,
+          balance: availableBal, // Use available balance instead of full balance
+        };
+      });
+
+      // Generate Permit3 signature for this chain and tokens using available balances
+      const result = await generatePermit3Signature(tokensWithAvailableBalances, recipientAddress);
 
       if (!result) {
         setErrors({ form: "Failed to generate Permit3 signature" });
@@ -302,7 +330,7 @@ export function SendInterface() {
           </div>
 
           <div className="p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700">
-            {isLoading ? (
+            {isLoading || allowancesLoading ? (
               <div className="py-2 text-center text-gray-500 dark:text-gray-400">
                 Loading tokens...
               </div>
@@ -327,14 +355,16 @@ export function SendInterface() {
           </div>
 
           {/* Available balance section */}
-          {!isLoading && selectedTokens.filter((t) => t.isSelected).length > 0 && (
-            <div className="mt-2 text-sm flex justify-between">
-              <p className="text-gray-500 dark:text-gray-400">Available balance:</p>
-              <p className="font-medium text-gray-700 dark:text-gray-300">
-                {getTotalAvailableBalance()}
-              </p>
-            </div>
-          )}
+          {!isLoading &&
+            !allowancesLoading &&
+            selectedTokens.filter((t) => t.isSelected).length > 0 && (
+              <div className="mt-2 text-sm flex justify-between">
+                <p className="text-gray-500 dark:text-gray-400">Available balance:</p>
+                <p className="font-medium text-gray-700 dark:text-gray-300">
+                  {getTotalAvailableBalance()}
+                </p>
+              </div>
+            )}
         </div>
 
         <div className="space-y-2">
@@ -385,6 +415,7 @@ export function SendInterface() {
           disabled={
             isSubmitting ||
             isPermit3Loading ||
+            allowancesLoading ||
             !recipient ||
             !amount ||
             Number(amount) <= 0 ||
@@ -647,9 +678,20 @@ export function SendInterface() {
                       </span>
                     </div>
                   </label>
-                  <span className="text-gray-600 dark:text-gray-300">
-                    {formatTokenAmount(token.balance, token.decimals)}
-                  </span>
+                  <div className="flex flex-col items-end">
+                    <span className="text-gray-700 dark:text-gray-300 font-medium">
+                      {formatTokenAmount(
+                        token.availableBalance || getAvailableBalance(token, allowances),
+                        token.decimals,
+                      )}
+                    </span>
+                    {(token.availableBalance || getAvailableBalance(token, allowances)) !==
+                      token.balance && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {formatTokenAmount(token.balance, token.decimals)} total
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
