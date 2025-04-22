@@ -9,9 +9,8 @@ import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
 import { tokens } from "@/config/tokens";
 import { z } from "zod";
-import { Hex, isAddress, isAddressEqual, parseUnits } from "viem";
+import { extractChain, Hex, isAddress, isAddressEqual, parseUnits } from "viem";
 import { usePermit3 } from "@/hooks/usePermit3";
-import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
 import { useQuery } from "@tanstack/react-query";
 import { EcoChainIds, EcoProtocolAddresses, IntentType } from "@eco-foundation/routes-ts";
@@ -25,7 +24,6 @@ import {
 import { intentSourceAbi } from "@/abis/intentSource";
 import { Permit3SignatureResult } from "@/types/permit3";
 import { TokenBalance } from "@/types/tokens";
-import { PERMIT3_ADDRESSES } from "@/config/contracts";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
@@ -62,7 +60,13 @@ const sendFormSchema = z
 async function sendToExecuteEndpoint(param: {
   permit3Result: Permit3SignatureResult;
   intents: IntentType[];
-}) {
+}): Promise<{
+  success: boolean;
+  message: string;
+  data: {
+    chainTxs: Record<string, string>;
+  };
+}> {
   try {
     // Process the data to convert BigInt values to strings
     const processedData = replaceBigInts(param);
@@ -110,19 +114,15 @@ export function SendInterface() {
     // We're not using the error directly, but it's logged inside the hook
   } = usePermit3();
 
-  // Hook for calling the Permit3 contract
-  const { executePermit3, isLoading: isPermit3TxLoading } = usePermit3Contract();
-
   // Hook for switching networks and interacting with the blockchain
-  const { switchChain, isPending: isSwitchingNetwork } = useSwitchChain();
+  const { switchChain } = useSwitchChain();
   const publicClient = usePublicClient();
 
   // State for tracking transaction submission
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [permit3Result, setPermit3Result] = useState<Permit3SignatureResult | null>(null);
-  const [showCopiedMessage, setShowCopiedMessage] = useState(false);
   const [showFullSignature, setShowFullSignature] = useState(false);
-  const [chainTxHashes, setChainTxHashes] = useState<Record<number, `0x${string}`>>({});
+  const [chainTxHashes, setChainTxHashes] = useState<Record<string, string>>({});
   const [isSwitchingToEthereum, setIsSwitchingToEthereum] = useState(false);
 
   // Initialize selected tokens state from balances
@@ -226,39 +226,6 @@ export function SendInterface() {
     // In a real app, you would handle different token decimals correctly
     const decimals = selectedTokensList[0]?.decimals || 18;
     return formatTokenAmount(totalBalance, decimals);
-  };
-
-  // Function to handle calling the Permit3 contract
-  const handleExecutePermit3 = async (chainId: number) => {
-    if (!permit3Result || !switchChain) return;
-
-    try {
-      // Get the current chain ID to check if we need to switch networks
-      const currentChain = publicClient?.chain?.id;
-
-      // Switch to the correct network if needed
-      if (currentChain !== chainId && switchChain) {
-        console.log(`Switching from chain ${currentChain} to chain ${chainId}`);
-        await switchChain({ chainId });
-
-        // Give a moment for the UI to update after chain switch
-        // This helps ensure the publicClient has the new chain when we execute the transaction
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      // Call the Permit3 contract with the specific chainId
-      const hash = await executePermit3(permit3Result, chainId);
-
-      if (hash) {
-        // Store the transaction hash for this chain
-        setChainTxHashes((prev) => ({
-          ...prev,
-          [chainId]: hash,
-        }));
-      }
-    } catch (error) {
-      console.error(`Error executing Permit3 on chain ${chainId}:`, error);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -388,7 +355,9 @@ export function SendInterface() {
       });
 
       const intents = quotesData.quotes.map((quote) => quote.intent);
-      sendToExecuteEndpoint({ permit3Result: result, intents });
+      const data = await sendToExecuteEndpoint({ permit3Result: result, intents });
+
+      setChainTxHashes(data.data.chainTxs);
 
       // In a real app, you would now submit this data to your backend or directly to a smart contract
       // that uses the Permit3 contract for approving and transferring tokens
@@ -438,12 +407,17 @@ export function SendInterface() {
 
       const amountBig = parseUnits(amount, target.token.decimals);
 
+      const isTargetToken = (token: SelectedToken) => {
+        return (
+          token.chainId === target.chainId &&
+          token.address === target.token.addresses[target.chainId]
+        );
+      };
+
       const { tokens, remaining } = selectedTokens
         .sort((tokenA, tokenB) => {
-          if (tokenA.chainId !== tokenB.chainId) {
-            if (tokenA.chainId === target.chainId) return -1;
-            if (tokenB.chainId === target.chainId) return 1;
-          }
+          if (isTargetToken(tokenA)) return -1;
+          if (isTargetToken(tokenB)) return 1;
           return tokenA.balance > tokenB.balance ? -1 : 1;
         })
         .reduce<{
@@ -766,113 +740,84 @@ export function SendInterface() {
               This signature can be used with the Permit3 contract to approve and transfer tokens.
             </p>
 
-            {/* Chain Action Buttons */}
-            <div className="mb-4">
-              <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
-                Execute on Chain:
-              </p>
-
-              <div className="flex flex-wrap gap-2">
-                {/* Get unique chainIds from the selected tokens */}
-                {Array.from(
-                  new Set(
-                    selectedTokens
-                      .filter((t) => t.isSelected && t.balance > 0n)
-                      .map((t) => t.chainId),
-                  ),
-                )
-                  .filter((chainId) => PERMIT3_ADDRESSES[chainId]) // Only show chains with Permit3 contract
-                  .map((chainId) => {
-                    const chainInfo = chains.find((c) => c.id === chainId);
-                    const txHash = chainTxHashes[chainId];
-                    const isLoading = isPermit3TxLoading && permit3Result.chainId === chainId;
-
-                    return (
-                      <div key={chainId} className="flex flex-col items-center">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleExecutePermit3(chainId);
-                          }}
-                          disabled={isLoading || isSwitchingNetwork || !!txHash}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center justify-center min-w-24 ${
-                            txHash
-                              ? "bg-green-600 text-white"
-                              : isLoading || isSwitchingNetwork
-                                ? "bg-gray-400 text-white"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
-                          }`}
-                        >
-                          {txHash ? (
-                            <span>✓ Success</span>
-                          ) : isLoading ? (
-                            <span>Submitting...</span>
-                          ) : isSwitchingNetwork ? (
-                            <span>Switching...</span>
-                          ) : (
-                            <span>Execute on {chainInfo?.name || `Chain ${chainId}`}</span>
-                          )}
-                        </button>
-
-                        {txHash && (
-                          <a
-                            href={`${chainInfo?.blockExplorers?.default.url || "#"}/tx/${txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-blue-600 mt-1 hover:underline"
-                          >
-                            View Transaction
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })}
+            <div>
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Tokens sent:</p>
+              <div className="bg-gray-200 dark:bg-gray-800 rounded text-xs overflow-x-auto">
+                <table className="w-full min-w-full">
+                  <thead>
+                    <tr className="bg-gray-300 dark:bg-gray-700">
+                      <th className="py-1 px-2 text-left">Token</th>
+                      <th className="py-1 px-2 text-left">Recipient</th>
+                      <th className="py-1 px-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.values(permit3Result.permitsByChain)
+                      .flat()
+                      .map((allowance, index) => {
+                        // Find the matching token to show symbol and format amount
+                        const matchingToken = selectedTokens.find(
+                          (t) =>
+                            t.isSelected &&
+                            t.address.toLowerCase() === allowance.token.toLowerCase(),
+                        );
+                        return (
+                          <tr key={index} className="border-t border-gray-300 dark:border-gray-700">
+                            <td className="py-1 px-2 font-medium">
+                              {matchingToken?.tokenSymbol || "Unknown"}
+                            </td>
+                            <td className="py-1 px-2">
+                              {allowance.account.substring(0, 6)}...
+                              {allowance.account.substring(38)}
+                            </td>
+                            <td className="py-1 px-2 text-right">
+                              {matchingToken
+                                ? formatTokenAmount(allowance.amountDelta, matchingToken.decimals)
+                                : allowance.amountDelta.toString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* Copy button and feedback */}
-            <div className="flex justify-end mb-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  // Create a JSON string with all relevant data
-                  const dataToCopy = JSON.stringify(
-                    {
-                      signature: permit3Result.signature,
-                      deadline: permit3Result.deadline.toString(),
-                      chainId: permit3Result.chainId,
-                      owner: permit3Result.owner,
-                      salt: permit3Result.salt,
-                      timestamp: permit3Result.timestamp,
-                    },
-                    null,
-                    2,
-                  );
-
-                  // Copy to clipboard
-                  navigator.clipboard
-                    .writeText(dataToCopy)
-                    .then(() => {
-                      setShowCopiedMessage(true);
-                      setTimeout(() => setShowCopiedMessage(false), 2000);
-                    })
-                    .catch((err) => console.error("Failed to copy: ", err));
-                }}
-                className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
-              >
-                <span>Copy All Data</span>
-                {showCopiedMessage && (
-                  <span className="ml-2 text-xs bg-white text-blue-600 px-1 rounded">
-                    ✓ Copied!
-                  </span>
-                )}
-              </button>
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                Transactions executed:
+              </p>
+              <div className="bg-gray-200 dark:bg-gray-800 rounded text-xs overflow-x-auto">
+                <table className="w-full min-w-full">
+                  <thead>
+                    <tr className="bg-gray-300 dark:bg-gray-700">
+                      <th className="py-1 px-2 text-left">Chain</th>
+                      <th className="py-1 px-2 text-right">Transaction hash</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(chainTxHashes).map(([chainId, transactionHash]) => {
+                      // eslint-disable-next-line
+                      const chain = extractChain({ chains: chains, id: Number(chainId) as any });
+                      return (
+                        <tr key={chainId} className="border-t border-gray-300 dark:border-gray-700">
+                          <td className="py-1 px-2 font-medium">{chain.name}</td>
+                          <td className="py-1 px-2 text-right">
+                            <a
+                              target="_blank"
+                              href={`${chain.blockExplorers.default.url}/tx/${transactionHash}`}
+                            >{`${transactionHash.substring(0, 6)}...${transactionHash.substring(transactionHash.length - 4, transactionHash.length)}`}</a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Signature data */}
-            <div className="space-y-3">
+            <div className="space-y-3 mt-2">
               {/* Signature */}
               <div>
                 <div className="flex justify-between items-center">
@@ -915,55 +860,6 @@ export function SendInterface() {
                     <span className="text-gray-500 dark:text-gray-400">Deadline:</span>
                     <span>{new Date(Number(permit3Result.deadline) * 1000).toLocaleString()}</span>
                   </div>
-                </div>
-              </div>
-
-              {/* Token Allowances */}
-              <div>
-                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                  Token Allowances:
-                </p>
-                <div className="bg-gray-200 dark:bg-gray-800 rounded text-xs overflow-x-auto">
-                  <table className="w-full min-w-full">
-                    <thead>
-                      <tr className="bg-gray-300 dark:bg-gray-700">
-                        <th className="py-1 px-2 text-left">Token</th>
-                        <th className="py-1 px-2 text-left">Recipient</th>
-                        <th className="py-1 px-2 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.values(permit3Result.permitsByChain)
-                        .flat()
-                        .map((allowance, index) => {
-                          // Find the matching token to show symbol and format amount
-                          const matchingToken = selectedTokens.find(
-                            (t) =>
-                              t.isSelected &&
-                              t.address.toLowerCase() === allowance.token.toLowerCase(),
-                          );
-                          return (
-                            <tr
-                              key={index}
-                              className="border-t border-gray-300 dark:border-gray-700"
-                            >
-                              <td className="py-1 px-2 font-medium">
-                                {matchingToken?.tokenSymbol || "Unknown"}
-                              </td>
-                              <td className="py-1 px-2">
-                                {allowance.account.substring(0, 6)}...
-                                {allowance.account.substring(38)}
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                {matchingToken
-                                  ? formatTokenAmount(allowance.amountDelta, matchingToken.decimals)
-                                  : allowance.amountDelta.toString()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
                 </div>
               </div>
             </div>
