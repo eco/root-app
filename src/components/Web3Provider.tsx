@@ -1,23 +1,23 @@
 "use client";
 
 import { ReactNode } from "react";
-import { WagmiConfig, createConfig, configureChains } from "wagmi";
-import { mainnet, polygon, arbitrum, base } from "wagmi/chains";
+import { configureChains, createConfig, WagmiConfig } from "wagmi";
 import {
   connectorsForWallets,
-  RainbowKitProvider,
   darkTheme,
   lightTheme,
+  RainbowKitProvider,
 } from "@rainbow-me/rainbowkit";
 import {
-  metaMaskWallet,
   coinbaseWallet,
-  walletConnectWallet,
+  metaMaskWallet,
   rainbowWallet,
   trustWallet,
+  walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { publicProvider } from "wagmi/providers/public";
 import { customProvider } from "@/utils/customProvider";
+import { chains } from "@/config/chains";
 
 import "@rainbow-me/rainbowkit/styles.css";
 
@@ -28,8 +28,8 @@ type Web3ProviderProps = {
 const projectId = "YOUR_WALLETCONNECT_PROJECT_ID"; // In production, this should be env var
 
 // Configure chains & providers
-const { chains, publicClient } = configureChains(
-  [mainnet, polygon, arbitrum, base],
+const { chains: wagmiChains, publicClient } = configureChains(
+  chains,
   [customProvider(), publicProvider()], // Uses default API keys from rpcUrlBuilder
 );
 
@@ -38,14 +38,17 @@ const connectors = connectorsForWallets([
   {
     groupName: "Recommended",
     wallets: [
-      metaMaskWallet({ projectId, chains }),
-      coinbaseWallet({ appName: "Decentralized App", chains }),
-      walletConnectWallet({ projectId, chains }),
+      metaMaskWallet({ projectId, chains: wagmiChains }),
+      coinbaseWallet({ appName: "Decentralized App", chains: wagmiChains }),
+      walletConnectWallet({ projectId, chains: wagmiChains }),
     ],
   },
   {
     groupName: "Others",
-    wallets: [rainbowWallet({ projectId, chains }), trustWallet({ projectId, chains })],
+    wallets: [
+      rainbowWallet({ projectId, chains: wagmiChains }),
+      trustWallet({ projectId, chains: wagmiChains }),
+    ],
   },
 ]);
 
@@ -60,7 +63,7 @@ export function Web3Provider({ children }: Web3ProviderProps) {
   return (
     <WagmiConfig config={wagmiConfig}>
       <RainbowKitProvider
-        chains={chains}
+        chains={wagmiChains}
         modalSize="compact"
         theme={{
           lightMode: lightTheme(),

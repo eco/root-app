@@ -1,5 +1,5 @@
-import { mainnet, polygon, arbitrum, base } from "wagmi/chains";
+import { mainnet, polygon, arbitrum, base, optimism } from "wagmi/chains";
 
 // Using wagmi predefined chains
 
-export const chains = [mainnet, polygon, arbitrum, base];
+export const chains = [mainnet, polygon, arbitrum, base, optimism];

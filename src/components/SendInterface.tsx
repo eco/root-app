@@ -8,10 +8,17 @@ import { TokenBalance, useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
 import { tokens } from "@/config/tokens";
 import { z } from "zod";
-import { Hex, isAddress, isAddressEqual } from "viem";
+import { Hex, isAddress, isAddressEqual, parseUnits } from "viem";
 import { PERMIT3_ADDRESSES, Permit3SignatureResult, usePermit3 } from "@/hooks/usePermit3";
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
+import { useQuery } from "@tanstack/react-query";
+import {
+  OpenQuotingClient,
+  RoutesService,
+  RoutesSupportedChainId,
+  selectCheapestQuote,
+} from "@eco-foundation/routes-sdk";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
@@ -358,6 +365,109 @@ export function SendInterface() {
     }
   };
 
+  const {
+    data: quotesData,
+    isLoading: areQuotesLoading,
+    error: quotesError,
+  } = useQuery({
+    queryKey: [
+      "quote",
+      selectedChainTokenPair,
+      amount,
+      ...selectedTokens.map((token) => `${token.chainId}-${token.address}`),
+    ],
+    queryFn: async () => {
+      if (!selectedChainTokenPair || !address || !recipient || !selectedChainTokenPair || !amount) {
+        throw new Error("Invalid data");
+      }
+
+      const target = parseSelectedTokenPair(selectedChainTokenPair);
+
+      const amountBig = parseUnits(amount, target.token.decimals);
+
+      const { tokens, remaining } = selectedTokens
+        .sort((tokenA, tokenB) => {
+          if (tokenA.chainId !== tokenB.chainId) {
+            if (tokenA.chainId === target.chainId) return -1;
+            if (tokenB.chainId === target.chainId) return 1;
+          }
+          return tokenA.balance > tokenB.balance ? -1 : 1;
+        })
+        .reduce<{
+          remaining: bigint;
+          tokens: { token: TokenBalance; amount: bigint }[];
+        }>(
+          (acc, token) => {
+            if (acc.remaining === 0n || !token.availableBalance || token.availableBalance <= 0n)
+              return acc;
+            const tokenAmount =
+              token.availableBalance >= acc.remaining ? acc.remaining : token.availableBalance;
+
+            return {
+              remaining: acc.remaining - tokenAmount,
+              tokens: [...acc.tokens, { token, amount: tokenAmount }],
+            };
+          },
+          { remaining: amountBig, tokens: [] },
+        );
+
+      if (remaining > 0n) {
+        throw new Error("Not enough funds");
+      }
+
+      const openQuotingClient = new OpenQuotingClient({
+        dAppID: "root-app",
+        customBaseUrl: process.env.NEXT_PUBLIC_OPEN_QUOTING_CLIENT_URL,
+      });
+
+      const routesService = new RoutesService({
+        isPreprod: process.env.NEXT_PUBLIC_ROUTES_ENV === "preprod",
+      });
+
+      // Note: Since Eco routes doesn't support multi-token intents, we need to create an intent per token
+      const quoteTokens = tokens.filter((token) => token.token.chainId !== target.chainId);
+      const quoteRequests = quoteTokens.map(async ({ token, amount }) => {
+        const intent = routesService.createSimpleIntent({
+          creator: address,
+          amount,
+          recipient: recipient as Hex,
+          spendingToken: token.address,
+          originChainID: token.chainId as RoutesSupportedChainId,
+          destinationChainID: target.chainId as RoutesSupportedChainId,
+          receivingToken: target.token.addresses[target.chainId],
+          spendingTokenLimit: BigInt(Number.MAX_VALUE),
+        });
+
+        const quotes = await openQuotingClient.requestQuotesForIntent(intent);
+        const quote = selectCheapestQuote(quotes);
+
+        // TODO: Not the correct way to get the amount out. Currently, the amount passed in
+        //  the quote returns the amount needed to be sent. Instead, we want to get the
+        //  amount of tokens receiving by sending X amount.
+        const amountOut = 2n * amount - BigInt(quote.quoteData.tokens[0].amount);
+
+        return { quote: quote.quoteData, amountOut };
+      });
+
+      const quotes = await Promise.all(quoteRequests);
+
+      const nonQuoteAmount = tokens
+        .filter((token) => !quoteTokens.includes(token))
+        .reduce((acc, token) => acc + token.amount, 0n);
+      const quotesAmount = quotes.reduce((acc, token) => acc + BigInt(token.amountOut), 0n);
+
+      return { tokens, quotes, amount: quotesAmount + nonQuoteAmount };
+    },
+    enabled: Boolean(selectedChainTokenPair && amount && selectedTokens.length),
+  });
+
+  console.log({
+    quotesData,
+    areQuotesLoading,
+    quotesError,
+    enabled: Boolean(selectedChainTokenPair && amount && selectedTokens.length),
+  });
+
   if (!isConnected) {
     return (
       <div className="w-full max-w-md mx-auto p-8 rounded-xl bg-white dark:bg-gray-800 shadow-md text-center">
@@ -473,22 +583,6 @@ export function SendInterface() {
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Amount
-          </label>
-          <input
-            type="text"
-            value={amount}
-            onChange={handleAmountChange}
-            placeholder="0.0"
-            className={`w-full px-3 py-2 bg-white dark:bg-gray-700 border ${
-              errors.amount ? "border-red-500" : "border-gray-300 dark:border-gray-600"
-            } rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500`}
-          />
-          {errors.amount && <p className="mt-1 text-sm text-red-600">{errors.amount}</p>}
-        </div>
-
-        <div className="space-y-2">
           <label className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300">
             <span>Recipient</span>
             <span
@@ -513,6 +607,22 @@ export function SendInterface() {
             </p>
           )}
           {errors.recipient && <p className="mt-1 text-sm text-red-600">{errors.recipient}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Amount
+          </label>
+          <input
+            type="text"
+            value={amount}
+            onChange={handleAmountChange}
+            placeholder="0.0"
+            className={`w-full px-3 py-2 bg-white dark:bg-gray-700 border ${
+              errors.amount ? "border-red-500" : "border-gray-300 dark:border-gray-600"
+            } rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500`}
+          />
+          {errors.amount && <p className="mt-1 text-sm text-red-600">{errors.amount}</p>}
         </div>
 
         <button
