@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useSwitchNetwork } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { formatTokenAmount, shortenAddress } from "@/utils/format";
+import { replaceBigInts } from "@/utils/json";
 import { TokenBalance, useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
 import { tokens } from "@/config/tokens";
@@ -55,11 +56,34 @@ const sendFormSchema = z
     },
   );
 
-// eslint-disable-next-line
-function sendToExecuteEndpoint(param: {
+async function sendToExecuteEndpoint(param: {
   permit3Result: Permit3SignatureResult;
   intents: IntentType[];
-}) {}
+}) {
+  try {
+    // Process the data to convert BigInt values to strings
+    const processedData = replaceBigInts(param);
+
+    const response = await fetch("/api/execute", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(processedData),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log("API response:", result);
+    return result;
+  } catch (error) {
+    console.error("Error sending data to execute endpoint:", error);
+    throw error;
+  }
+}
 
 export function SendInterface() {
   const { address, isConnected } = useAccount();
@@ -313,6 +337,8 @@ export function SendInterface() {
         }
 
         const { intent } = quote;
+
+        console.log({ quote });
 
         const { IntentSource: intentSourceAddr } =
           EcoProtocolAddresses[publicClient.chain.id.toString() as EcoChainIds];
