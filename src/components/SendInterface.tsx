@@ -6,8 +6,9 @@ import { mainnet } from "wagmi/chains";
 import { formatTokenAmount, shortenAddress } from "@/utils/format";
 import { TokenBalance, useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
+import { tokens } from "@/config/tokens";
 import { z } from "zod";
-import { isAddress, isAddressEqual } from "viem";
+import { Hex, isAddress, isAddressEqual } from "viem";
 import { PERMIT3_ADDRESSES, Permit3SignatureResult, usePermit3 } from "@/hooks/usePermit3";
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
@@ -56,6 +57,7 @@ export function SendInterface() {
     amount?: string;
     selectedTokens?: string;
     form?: string;
+    targetToken?: string;
   }>({});
 
   // Get the generatePermit3Signature function
@@ -82,6 +84,7 @@ export function SendInterface() {
 
   // Initialize selected tokens state from balances
   const [selectedTokens, setSelectedTokens] = useState<SelectedToken[]>([]);
+  const [selectedChainTokenPair, setSelectedChainTokenPair] = useState<string | null>(null);
 
   // Get chain map for displaying chain names
   const chainMap = Object.fromEntries(chains.map((chain) => [chain.id, chain]));
@@ -89,17 +92,16 @@ export function SendInterface() {
   // Update selected tokens when balances change
   useEffect(() => {
     if (balances.length > 0 && allowances.length > 0 && selectedTokens.length === 0) {
-      setSelectedTokens(
-        balances.map((balance) => {
-          const availableBal = getAvailableBalance(balance, allowances);
-          return {
-            ...balance,
-            // Only select tokens that have an available balance
-            isSelected: availableBal > 0n,
-            availableBalance: availableBal,
-          };
-        }),
-      );
+      const tokensList = balances.map((balance) => {
+        const availableBal = getAvailableBalance(balance, allowances);
+        return {
+          ...balance,
+          isSelected: availableBal > 0,
+          availableBalance: availableBal,
+        };
+      });
+
+      setSelectedTokens(tokensList);
     }
   }, [balances, allowances, selectedTokens.length, getAvailableBalance]);
 
@@ -124,6 +126,34 @@ export function SendInterface() {
         return token;
       });
     });
+  };
+
+  const parseSelectedTokenPair = (value: string) => {
+    // Parse the selected value to get chainId and tokenAddress
+    const [chainId, tokenAddress] = value.split("|");
+
+    if (!chainId || !tokenAddress) throw new Error("Invalid token");
+
+    const chainIdNum = parseInt(chainId);
+    const addressHex = tokenAddress as Hex;
+
+    // Find the token in the tokens list
+    const selectedConfigToken = tokens.find((token) => token.addresses[chainIdNum] === addressHex);
+
+    if (!selectedConfigToken) throw new Error("Invalid token");
+
+    return { token: selectedConfigToken, chainId: chainIdNum };
+  };
+
+  const handleChainTokenPairChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value;
+
+    if (value === "") {
+      setSelectedChainTokenPair(null);
+      return;
+    }
+
+    setSelectedChainTokenPair(value);
   };
 
   const getTotalSelectedBalance = () => {
@@ -195,6 +225,26 @@ export function SendInterface() {
     setErrors({});
     setPermit3Result(null);
     setChainTxHashes({});
+
+    // Validate amount field before continuing
+    if (!amount || amount === "" || Number(amount) <= 0) {
+      setErrors({ amount: "Amount must be a positive number" });
+      return;
+    }
+
+    // Validate amount field before continuing
+    if (!selectedChainTokenPair) {
+      setErrors({ targetToken: "Select a target token" });
+      return;
+    }
+
+    // Validate that at least one token is selected
+    const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
+    if (selectedTokensList.length === 0) {
+      setErrors({ selectedTokens: "No tokens selected for transfer" });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -220,9 +270,12 @@ export function SendInterface() {
         }
       }
 
-      // Get selected tokens
-      const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
+      // Get available balance for validation
       const availableBalance = getTotalAvailableBalance();
+
+      const target = parseSelectedTokenPair(selectedChainTokenPair);
+
+      console.log({ target });
 
       // Validate form data using Zod
       const validatedData = sendFormSchema.parse({
@@ -234,13 +287,6 @@ export function SendInterface() {
 
       // If validation passes, proceed with Permit3 signature
       const recipientAddress = validatedData.recipient as `0x${string}`;
-
-      // Check if we have tokens to sign for
-      if (selectedTokensList.length === 0) {
-        setErrors({ selectedTokens: "No tokens selected for transfer" });
-        setIsSubmitting(false);
-        return;
-      }
 
       // Prepare tokens with available balances instead of full balances
       const tokensWithAvailableBalances = selectedTokensList.map((token) => {
@@ -343,6 +389,37 @@ export function SendInterface() {
             {errors.selectedTokens}
           </div>
         )}
+        {/* Chain-Token Pair Selector */}
+        <div className="space-y-2 mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Target token
+          </label>
+          <select
+            value={selectedChainTokenPair || ""}
+            onChange={handleChainTokenPairChange}
+            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Select a token</option>
+            {tokens.flatMap((token) =>
+              // For each token, create options for each chain it's available on
+              Object.entries(token.addresses).map(([chainId, address]) => {
+                const chainIdNum = Number(chainId);
+                const chainInfo = chainMap[chainIdNum];
+
+                if (!chainInfo) return null;
+
+                return (
+                  <option key={`${chainIdNum}-${address}`} value={`${chainIdNum}|${address}`}>
+                    {token.symbol} on {chainInfo.name}
+                  </option>
+                );
+              }),
+            )}
+          </select>
+          {errors.targetToken && <p className="mt-1 text-sm text-red-600">{errors.targetToken}</p>}
+        </div>
+
+        {/* Tokens to Send Section */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -353,7 +430,7 @@ export function SendInterface() {
               onClick={() => setShowTokenSelector(true)}
               className="text-sm text-blue-600 dark:text-blue-400"
             >
-              Select Tokens
+              Advanced Selection
             </button>
           </div>
 
@@ -754,9 +831,18 @@ export function SendInterface() {
               })}
             </div>
 
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex justify-between">
               <button
-                onClick={() => setShowTokenSelector(false)}
+                onClick={() => {
+                  // Update the selectedChainTokenPair based on what's selected
+                  const selected = selectedTokens.find((t) => t.isSelected);
+                  if (selected) {
+                    setSelectedChainTokenPair(`${selected.chainId}|${selected.address}`);
+                  } else {
+                    setSelectedChainTokenPair(null);
+                  }
+                  setShowTokenSelector(false);
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 Done
