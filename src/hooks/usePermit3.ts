@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useAccount, useSignTypedData } from "wagmi";
 import { Hex, toHex } from "viem";
-import { TokenBalance } from "./useTokenBalances";
 import {
   createUnhingedProofFromAllLeaves,
   encodeChainAllowances,
 } from "@/utils/createUnhingedProof";
+import { TokenBalance } from "@/types/tokens";
+import { AllowanceOrTransfer, Permit3SignatureResult, UsePermit3Result } from "@/types/permit3";
 
 // Constants for Permit3 domain
 const PERMIT3_DOMAIN_NAME = "Permit3";
@@ -19,49 +20,6 @@ export const PERMIT3_ADDRESSES: Record<number, Hex> = {
   137: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Polygon
   42161: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Arbitrum
   8453: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Base
-};
-
-export type AllowanceOrTransfer = {
-  modeOrExpiration: number;
-  token: Hex;
-  account: Hex;
-  amountDelta: bigint;
-};
-
-export type ChainPermits = {
-  chainId: bigint;
-  permits: AllowanceOrTransfer[];
-};
-
-export type UnhingedProof = {
-  nodes: Hex[];
-  counts: Hex;
-};
-
-export type Permit3Proof = {
-  permits: ChainPermits;
-  unhingedProof: UnhingedProof;
-};
-
-export type Permit3SignatureResult = {
-  signature: string;
-  deadline: bigint;
-  chainId: number; // The original chain ID from the signature
-  leafs: Hex[]; // The original chain ID from the signature
-  owner: Hex;
-  salt: Hex;
-  timestamp: number;
-  // Store all permits by chain ID for easy filtering
-  permitsByChain: Record<number, AllowanceOrTransfer[]>;
-};
-
-export type UsePermit3Result = {
-  generatePermit3Signature: (
-    tokens: { token: TokenBalance; amount: bigint; recipient: Hex }[],
-  ) => Promise<Permit3SignatureResult | null>;
-  resetSignature: () => void;
-  isLoading: boolean;
-  error: Error | null;
 };
 
 export function usePermit3(): UsePermit3Result {

@@ -7,7 +7,8 @@ import { tokens } from "@/config/tokens";
 import { chains } from "@/config/chains";
 import { keyManagerRpc } from "@/utils/keyManagerRpc";
 import { PERMIT3_ADDRESSES } from "./usePermit3";
-import { TokenBalance } from "./useTokenBalances";
+
+import { TokenBalance } from "@/types/tokens";
 
 // ERC20 ABI (minimal for allowance checking)
 const erc20Abi = [

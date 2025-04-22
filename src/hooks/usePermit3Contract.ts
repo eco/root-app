@@ -4,12 +4,12 @@ import { useState } from "react";
 import { encodeFunctionData, Hex } from "viem";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { PERMIT3_ADDRESSES } from "./usePermit3";
-import { Permit3SignatureResult } from "./usePermit3";
 import { permit3Abi } from "@/abis/permit3";
 import {
   createUnhingedProofFromAllLeaves,
   encodeChainAllowances,
 } from "@/utils/createUnhingedProof";
+import { Permit3SignatureResult } from "@/types/permit3";
 
 export type UsePermit3ContractResult = {
   executePermit3: (

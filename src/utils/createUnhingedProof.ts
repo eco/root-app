@@ -1,5 +1,6 @@
 import { concat, encodeAbiParameters, encodePacked, Hex, keccak256, pad } from "viem";
-import { AllowanceOrTransfer } from "@/hooks/usePermit3";
+
+import { AllowanceOrTransfer } from "@/types/permit3";
 
 // The hash of the ChainPermits type for hashing
 // keccak256("ChainPermits(uint64 chainId,AllowanceOrTransfer[] permits)AllowanceOrTransfer(uint48 transferOrExpiration,address token,address spender,uint160 amountDelta)")

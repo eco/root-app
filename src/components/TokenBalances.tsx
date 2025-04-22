@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useTokenBalances, GroupedTokenBalance } from "@/hooks/useTokenBalances";
+import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { formatTokenAmount } from "@/utils/format";
 import { chains } from "@/config/chains";
 import { useTokenAllowances, TokenAllowance } from "@/hooks/useTokenAllowances";
 import { AllowanceDialog } from "./AllowanceDialog";
+import { GroupedTokenBalance } from "@/types/tokens";
 
 export function TokenBalances() {
   const { balancesByGroup, balances, isLoading, error } = useTokenBalances();

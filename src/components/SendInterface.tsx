@@ -5,12 +5,12 @@ import { useAccount, usePublicClient, useSwitchNetwork } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { formatTokenAmount, shortenAddress } from "@/utils/format";
 import { replaceBigInts } from "@/utils/json";
-import { TokenBalance, useTokenBalances } from "@/hooks/useTokenBalances";
+import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { chains } from "@/config/chains";
 import { tokens } from "@/config/tokens";
 import { z } from "zod";
 import { Hex, isAddress, isAddressEqual, parseUnits } from "viem";
-import { PERMIT3_ADDRESSES, Permit3SignatureResult, usePermit3 } from "@/hooks/usePermit3";
+import { PERMIT3_ADDRESSES, usePermit3 } from "@/hooks/usePermit3";
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
 import { useQuery } from "@tanstack/react-query";
@@ -23,6 +23,8 @@ import {
   selectCheapestQuote,
 } from "@eco-foundation/routes-sdk";
 import { intentSourceAbi } from "@/abis/intentSource";
+import { Permit3SignatureResult } from "@/types/permit3";
+import { TokenBalance } from "@/types/tokens";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;

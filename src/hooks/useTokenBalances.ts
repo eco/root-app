@@ -2,10 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { createPublicClient, Hex } from "viem";
+import { createPublicClient } from "viem";
 import { tokens } from "@/config/tokens";
 import { chains } from "@/config/chains";
 import { keyManagerRpc } from "@/utils/keyManagerRpc";
+import { GroupedTokenBalance, TokenBalance } from "@/types/tokens";
 
 // ERC20 ABI (minimal for balance checking)
 const erc20Abi = [
@@ -17,32 +18,6 @@ const erc20Abi = [
     type: "function",
   },
 ] as const;
-
-export interface TokenBalance {
-  chainId: number;
-  tokenSymbol: string;
-  tokenName: string;
-  balance: bigint;
-  decimals: number;
-  address: Hex;
-  groupId?: string;
-}
-
-export interface GroupedTokenBalance {
-  groupId: string;
-  displaySymbol: string;
-  displayName: string;
-  decimals: number;
-  totalBalance: bigint;
-  balanceByChain: Record<
-    number,
-    Array<{
-      balance: bigint;
-      address: Hex;
-      tokenSymbol: string;
-    }>
-  >;
-}
 
 // Fetch balances function separated for re-usability
 async function fetchBalances(walletAddress: string | undefined): Promise<TokenBalance[]> {
