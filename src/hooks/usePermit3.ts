@@ -57,8 +57,7 @@ export type Permit3SignatureResult = {
 
 export type UsePermit3Result = {
   generatePermit3Signature: (
-    tokenBalances: TokenBalance[],
-    recipient: Hex,
+    tokens: { token: TokenBalance; amount: bigint; recipient: Hex }[],
   ) => Promise<Permit3SignatureResult | null>;
   resetSignature: () => void;
   isLoading: boolean;
@@ -72,10 +71,9 @@ export function usePermit3(): UsePermit3Result {
 
   // Generate a Permit3 signature for selected tokens
   const generatePermit3Signature = async (
-    tokenBalances: TokenBalance[],
-    recipient: Hex,
+    tokens: { token: TokenBalance; amount: bigint; recipient: Hex }[],
   ): Promise<Permit3SignatureResult | null> => {
-    if (!address || !recipient || tokenBalances.length === 0) {
+    if (!address || tokens.length === 0) {
       return null;
     }
 
@@ -101,13 +99,8 @@ export function usePermit3(): UsePermit3Result {
     // Organize permits by chain ID first
     const permitsByChain: Record<number, AllowanceOrTransfer[]> = {};
 
-    if (tokenBalances.length === 0) {
-      console.error("No valid tokens found for any chain");
-      return null;
-    }
-
     // Group all tokens by chain ID
-    tokenBalances.forEach((token) => {
+    tokens.forEach(({ token, amount, recipient }) => {
       if (token.balance > 0n) {
         const tokenChainId = token.chainId;
 
@@ -120,7 +113,7 @@ export function usePermit3(): UsePermit3Result {
           modeOrExpiration: 0, // Transfer mode
           token: token.address as Hex,
           account: recipient,
-          amountDelta: token.balance,
+          amountDelta: amount,
         };
 
         permitsByChain[tokenChainId].push(allowance);

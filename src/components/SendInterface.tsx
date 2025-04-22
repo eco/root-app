@@ -13,12 +13,15 @@ import { PERMIT3_ADDRESSES, Permit3SignatureResult, usePermit3 } from "@/hooks/u
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
 import { useQuery } from "@tanstack/react-query";
+import { EcoChainIds, EcoProtocolAddresses, IntentType } from "@eco-foundation/routes-ts";
 import {
+  CreateSimpleIntentParams,
   OpenQuotingClient,
   RoutesService,
   RoutesSupportedChainId,
   selectCheapestQuote,
 } from "@eco-foundation/routes-sdk";
+import { intentSourceAbi } from "@/abis/intentSource";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
@@ -51,6 +54,12 @@ const sendFormSchema = z
       path: ["amount"], // Assign the error to the amount field
     },
   );
+
+// eslint-disable-next-line
+function sendToExecuteEndpoint(param: {
+  permit3Result: Permit3SignatureResult;
+  intents: IntentType[];
+}) {}
 
 export function SendInterface() {
   const { address, isConnected } = useAccount();
@@ -245,6 +254,11 @@ export function SendInterface() {
       return;
     }
 
+    // Validate amount field before continuing
+    if (!quotesData) {
+      return;
+    }
+
     // Validate that at least one token is selected
     const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
     if (selectedTokensList.length === 0) {
@@ -280,38 +294,42 @@ export function SendInterface() {
       // Get available balance for validation
       const availableBalance = getTotalAvailableBalance();
 
-      const target = parseSelectedTokenPair(selectedChainTokenPair);
-
-      console.log({ target });
-
       // Validate form data using Zod
-      const validatedData = sendFormSchema.parse({
+      sendFormSchema.parse({
         recipient: recipient || address || "",
         amount,
         selectedTokens: selectedTokensList,
         availableBalance,
       });
 
-      // If validation passes, proceed with Permit3 signature
-      const recipientAddress = validatedData.recipient as `0x${string}`;
+      const permit3SendRequests = quotesData.tokens.map(async ({ token, amount }) => {
+        const quote = quotesData.quotes.find(
+          (quote) => quote.token.address === token.address && quote.token.chainId === token.chainId,
+        );
 
-      // Prepare tokens with available balances instead of full balances
-      const tokensWithAvailableBalances = selectedTokensList.map((token) => {
-        // Calculate or use cached available balance
-        const availableBal =
-          token.availableBalance !== undefined
-            ? token.availableBalance
-            : getAvailableBalance(token, allowances);
+        if (!quote) {
+          // Transfer funds directly to recipient
+          return { token, amount, recipient: recipient as Hex };
+        }
 
-        // Return a new token object with the available balance
-        return {
-          ...token,
-          balance: availableBal, // Use available balance instead of full balance
-        };
+        const { intent } = quote;
+
+        const { IntentSource: intentSourceAddr } =
+          EcoProtocolAddresses[publicClient.chain.id.toString() as EcoChainIds];
+        const vaultAddr = await publicClient.readContract({
+          abi: intentSourceAbi,
+          address: intentSourceAddr,
+          functionName: "intentVaultAddress",
+          args: [intent],
+        });
+
+        return { token, amount, recipient: vaultAddr };
       });
 
+      const permit3Send = await Promise.all(permit3SendRequests);
+
       // Generate Permit3 signature for this chain and tokens using available balances
-      const result = await generatePermit3Signature(tokensWithAvailableBalances, recipientAddress);
+      const result = await generatePermit3Signature(permit3Send);
 
       if (!result) {
         setErrors({ form: "Failed to generate Permit3 signature" });
@@ -331,11 +349,14 @@ export function SendInterface() {
           address: t.address,
           amount: t.balance.toString(),
         })),
-        recipient: recipientAddress,
+        recipient: recipient,
         signature: result.signature,
         deadline: result.deadline.toString(),
         permitsByChain: result.permitsByChain,
       });
+
+      const intents = quotesData.quotes.map((quote) => quote.intent);
+      sendToExecuteEndpoint({ permit3Result: result, intents });
 
       // In a real app, you would now submit this data to your backend or directly to a smart contract
       // that uses the Permit3 contract for approving and transferring tokens
@@ -427,7 +448,7 @@ export function SendInterface() {
       // Note: Since Eco routes doesn't support multi-token intents, we need to create an intent per token
       const quoteTokens = tokens.filter((token) => token.token.chainId !== target.chainId);
       const quoteRequests = quoteTokens.map(async ({ token, amount }) => {
-        const intent = routesService.createSimpleIntent({
+        const preflightIntentParams: CreateSimpleIntentParams = {
           creator: address,
           amount,
           recipient: recipient as Hex,
@@ -436,9 +457,11 @@ export function SendInterface() {
           destinationChainID: target.chainId as RoutesSupportedChainId,
           receivingToken: target.token.addresses[target.chainId],
           spendingTokenLimit: BigInt(Number.MAX_VALUE),
-        });
+        };
 
-        const quotes = await openQuotingClient.requestQuotesForIntent(intent);
+        const preflightIntent = routesService.createSimpleIntent(preflightIntentParams);
+
+        const quotes = await openQuotingClient.requestQuotesForIntent(preflightIntent);
         const quote = selectCheapestQuote(quotes);
 
         // TODO: Not the correct way to get the amount out. Currently, the amount passed in
@@ -446,25 +469,23 @@ export function SendInterface() {
         //  amount of tokens receiving by sending X amount.
         const amountOut = 2n * amount - BigInt(quote.quoteData.tokens[0].amount);
 
-        return { quote: quote.quoteData, amountOut };
+        const intent = routesService.createSimpleIntent({
+          ...preflightIntentParams,
+          spendingTokenLimit: amount,
+          amount: amountOut,
+        });
+
+        return { intent, quote: quote.quoteData, token, amountOut };
       });
 
       const quotes = await Promise.all(quoteRequests);
 
-      const nonQuoteAmount = tokens
-        .filter((token) => !quoteTokens.includes(token))
-        .reduce((acc, token) => acc + token.amount, 0n);
+      const nonQuoteTokens = tokens.filter((token) => !quoteTokens.includes(token));
+      const nonQuoteAmount = nonQuoteTokens.reduce((acc, token) => acc + token.amount, 0n);
       const quotesAmount = quotes.reduce((acc, token) => acc + BigInt(token.amountOut), 0n);
 
-      return { tokens, quotes, amount: quotesAmount + nonQuoteAmount };
+      return { tokens, target, quotes, nonQuoteTokens, amount: quotesAmount + nonQuoteAmount };
     },
-    enabled: Boolean(selectedChainTokenPair && amount && selectedTokens.length),
-  });
-
-  console.log({
-    quotesData,
-    areQuotesLoading,
-    quotesError,
     enabled: Boolean(selectedChainTokenPair && amount && selectedTokens.length),
   });
 
@@ -477,6 +498,8 @@ export function SendInterface() {
       </div>
     );
   }
+
+  console.log({ quotesData });
 
   return (
     <div className="w-full max-w-md mx-auto rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-md">
@@ -687,6 +710,7 @@ export function SendInterface() {
             isSwitchingToEthereum ||
             !recipient ||
             !amount ||
+            !quotesData ||
             Number(amount) <= 0 ||
             selectedTokens.filter((t) => t.isSelected).length === 0
           }
