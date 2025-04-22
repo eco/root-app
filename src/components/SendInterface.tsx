@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, usePublicClient, useSwitchNetwork } from "wagmi";
+import { useAccount, usePublicClient, useSwitchChain } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { formatTokenAmount, shortenAddress } from "@/utils/format";
 import { replaceBigInts } from "@/utils/json";
@@ -10,7 +10,7 @@ import { chains } from "@/config/chains";
 import { tokens } from "@/config/tokens";
 import { z } from "zod";
 import { Hex, isAddress, isAddressEqual, parseUnits } from "viem";
-import { PERMIT3_ADDRESSES, usePermit3 } from "@/hooks/usePermit3";
+import { usePermit3 } from "@/hooks/usePermit3";
 import { usePermit3Contract } from "@/hooks/usePermit3Contract";
 import { useTokenAllowances } from "@/hooks/useTokenAllowances";
 import { useQuery } from "@tanstack/react-query";
@@ -25,6 +25,7 @@ import {
 import { intentSourceAbi } from "@/abis/intentSource";
 import { Permit3SignatureResult } from "@/types/permit3";
 import { TokenBalance } from "@/types/tokens";
+import { PERMIT3_ADDRESSES } from "@/config/contracts";
 
 type SelectedToken = TokenBalance & {
   isSelected: boolean;
@@ -113,7 +114,7 @@ export function SendInterface() {
   const { executePermit3, isLoading: isPermit3TxLoading } = usePermit3Contract();
 
   // Hook for switching networks and interacting with the blockchain
-  const { switchNetwork, isLoading: isSwitchingNetwork } = useSwitchNetwork();
+  const { switchChain, isPending: isSwitchingNetwork } = useSwitchChain();
   const publicClient = usePublicClient();
 
   // State for tracking transaction submission
@@ -229,16 +230,16 @@ export function SendInterface() {
 
   // Function to handle calling the Permit3 contract
   const handleExecutePermit3 = async (chainId: number) => {
-    if (!permit3Result || !switchNetwork) return;
+    if (!permit3Result || !switchChain) return;
 
     try {
       // Get the current chain ID to check if we need to switch networks
       const currentChain = publicClient?.chain?.id;
 
       // Switch to the correct network if needed
-      if (currentChain !== chainId && switchNetwork) {
+      if (currentChain !== chainId && switchChain) {
         console.log(`Switching from chain ${currentChain} to chain ${chainId}`);
-        await switchNetwork(chainId);
+        await switchChain({ chainId });
 
         // Give a moment for the UI to update after chain switch
         // This helps ensure the publicClient has the new chain when we execute the transaction
@@ -297,11 +298,11 @@ export function SendInterface() {
     try {
       // Ensure we're on Ethereum mainnet for sending tokens
       const currentChain = publicClient?.chain?.id;
-      if (currentChain !== mainnet.id && switchNetwork) {
+      if (currentChain !== mainnet.id && switchChain) {
         console.log(`Switching from chain ${currentChain} to Ethereum mainnet (${mainnet.id})`);
         try {
           setIsSwitchingToEthereum(true);
-          await switchNetwork(mainnet.id);
+          await switchChain({ chainId: mainnet.id });
           // Give a moment for the UI to update after chain switch
           await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (switchError) {
@@ -342,8 +343,11 @@ export function SendInterface() {
 
         console.log({ quote });
 
-        const { IntentSource: intentSourceAddr } =
-          EcoProtocolAddresses[publicClient.chain.id.toString() as EcoChainIds];
+        if (!publicClient?.chain?.id) {
+          throw new Error("Chain ID is not available");
+        }
+        const chainIdStr = publicClient.chain.id.toString() as EcoChainIds;
+        const { IntentSource: intentSourceAddr } = EcoProtocolAddresses[chainIdStr];
         const vaultAddr = await publicClient.readContract({
           abi: intentSourceAbi,
           address: intentSourceAddr,

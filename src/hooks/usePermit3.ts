@@ -9,22 +9,15 @@ import {
 } from "@/utils/createUnhingedProof";
 import { TokenBalance } from "@/types/tokens";
 import { AllowanceOrTransfer, Permit3SignatureResult, UsePermit3Result } from "@/types/permit3";
+import { PERMIT3_ADDRESSES } from "@/config/contracts";
 
 // Constants for Permit3 domain
 const PERMIT3_DOMAIN_NAME = "Permit3";
 const PERMIT3_DOMAIN_VERSION = "1";
 
-// The verified Permit3 contract addresses
-export const PERMIT3_ADDRESSES: Record<number, Hex> = {
-  1: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Ethereum Mainnet
-  137: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Polygon
-  42161: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Arbitrum
-  8453: "0xFB63C771dd42F5f8C949c69Cddb15aFe585D6889", // Base
-};
-
 export function usePermit3(): UsePermit3Result {
   const { address } = useAccount();
-  const { signTypedDataAsync, isLoading, error } = useSignTypedData();
+  const { signTypedDataAsync, isPending: isLoading, error } = useSignTypedData();
   const [, setSignature] = useState<string | null>(null);
 
   // Generate a Permit3 signature for selected tokens

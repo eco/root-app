@@ -1,25 +1,18 @@
 "use client";
 
 import { ReactNode } from "react";
-import { configureChains, createConfig, WagmiConfig } from "wagmi";
+import { WagmiProvider } from "wagmi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
-  connectorsForWallets,
   darkTheme,
+  getDefaultConfig,
   lightTheme,
   RainbowKitProvider,
 } from "@rainbow-me/rainbowkit";
-import {
-  coinbaseWallet,
-  metaMaskWallet,
-  rainbowWallet,
-  trustWallet,
-  walletConnectWallet,
-} from "@rainbow-me/rainbowkit/wallets";
-import { publicProvider } from "wagmi/providers/public";
-import { customProvider } from "@/utils/customProvider";
-import { chains } from "@/config/chains";
 
 import "@rainbow-me/rainbowkit/styles.css";
+import { chains } from "@/config/chains";
+import { keyManagerRpc } from "@/utils/keyManagerRpc";
 
 type Web3ProviderProps = {
   children: ReactNode;
@@ -27,51 +20,37 @@ type Web3ProviderProps = {
 
 const projectId = "YOUR_WALLETCONNECT_PROJECT_ID"; // In production, this should be env var
 
-// Configure chains & providers
-const { chains: wagmiChains, publicClient } = configureChains(
-  chains,
-  [customProvider(), publicProvider()], // Uses default API keys from rpcUrlBuilder
-);
+// Create config using the new getDefaultConfig method from RainbowKit v2
+const config = getDefaultConfig({
+  appName: "Decentralized App",
+  projectId,
+  chains: chains,
+  transports: Object.fromEntries(chains.map((chain) => [chain.id, keyManagerRpc()])),
+});
 
-// Configure supported wallets
-const connectors = connectorsForWallets([
-  {
-    groupName: "Recommended",
-    wallets: [
-      metaMaskWallet({ projectId, chains: wagmiChains }),
-      coinbaseWallet({ appName: "Decentralized App", chains: wagmiChains }),
-      walletConnectWallet({ projectId, chains: wagmiChains }),
-    ],
+// Create a query client for TanStack Query (required in RainbowKit v2)
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    },
   },
-  {
-    groupName: "Others",
-    wallets: [
-      rainbowWallet({ projectId, chains: wagmiChains }),
-      trustWallet({ projectId, chains: wagmiChains }),
-    ],
-  },
-]);
-
-// Create wagmi config
-const wagmiConfig = createConfig({
-  autoConnect: true,
-  connectors,
-  publicClient,
 });
 
 export function Web3Provider({ children }: Web3ProviderProps) {
   return (
-    <WagmiConfig config={wagmiConfig}>
-      <RainbowKitProvider
-        chains={wagmiChains}
-        modalSize="compact"
-        theme={{
-          lightMode: lightTheme(),
-          darkMode: darkTheme(),
-        }}
-      >
-        {children}
-      </RainbowKitProvider>
-    </WagmiConfig>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider
+          theme={{
+            lightMode: lightTheme(),
+            darkMode: darkTheme(),
+          }}
+        >
+          {children}
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }

@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { encodeFunctionData, Hex } from "viem";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { PERMIT3_ADDRESSES } from "./usePermit3";
 import { permit3Abi } from "@/abis/permit3";
 import {
   createUnhingedProofFromAllLeaves,
   encodeChainAllowances,
 } from "@/utils/createUnhingedProof";
 import { Permit3SignatureResult } from "@/types/permit3";
+import { PERMIT3_ADDRESSES } from "@/config/contracts";
 
 export type UsePermit3ContractResult = {
   executePermit3: (
@@ -88,9 +88,15 @@ export function usePermit3Contract(): UsePermit3ContractResult {
       console.log({ unhingedProof, unhingedRoot, targetLeafIndex, leaf });
 
       // Create a chain-specific unhinged proof structure
-      const chainSpecificProof = {
+      const chainSpecificProof: {
+        permits: { chainId: bigint; permits: typeof chainSpecificPermits.permits };
+        unhingedProof: { nodes: Hex[]; counts: Hex };
+      } = {
         permits: chainSpecificPermits,
-        unhingedProof,
+        unhingedProof: {
+          nodes: unhingedProof.nodes,
+          counts: unhingedProof.counts,
+        },
       };
 
       // Simulate the transaction to check for potential errors

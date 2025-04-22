@@ -2,11 +2,11 @@
 
 import { Fragment, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { useAccount, usePublicClient, useWalletClient, useSwitchNetwork } from "wagmi";
+import { useAccount, usePublicClient, useWalletClient, useSwitchChain } from "wagmi";
 import { formatTokenAmount } from "@/utils/format";
-import { PERMIT3_ADDRESSES } from "@/hooks/usePermit3";
 import { TokenAllowance } from "@/hooks/useTokenAllowances";
 import { chains } from "@/config/chains";
+import { PERMIT3_ADDRESSES } from "@/config/contracts";
 
 // ERC20 ABI for approvals
 const erc20ApprovalAbi = [
@@ -41,7 +41,7 @@ export function AllowanceDialog({
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
-  const { switchNetwork } = useSwitchNetwork();
+  const { switchChain } = useSwitchChain();
 
   if (!tokenAllowance) return null;
 
@@ -51,14 +51,14 @@ export function AllowanceDialog({
     `Chain ${tokenAllowance.chainId}`;
 
   const handleNetworkSwitch = async () => {
-    if (!switchNetwork) {
+    if (!switchChain) {
       setError("Network switching not supported by your wallet");
       return false;
     }
 
     try {
       setIsSwitchingNetwork(true);
-      await switchNetwork(tokenAllowance.chainId);
+      await switchChain({ chainId: tokenAllowance.chainId });
       // Wait a moment for the network switch to complete
       await new Promise((resolve) => setTimeout(resolve, 1000));
       setIsSwitchingNetwork(false);

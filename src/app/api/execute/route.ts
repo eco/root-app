@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { restoreBigInts } from "@/utils/json";
 import { z } from "zod";
-import { createWalletClient, encodeFunctionData, extractChain, Hex } from "viem";
+import { createWalletClient, encodeFunctionData, extractChain, Hex, parseAbi } from "viem";
 import { chains } from "@/config/chains";
-import { keyManagerRpc } from "@/utils/keyManagerRpc";
-import { PERMIT3_ADDRESSES } from "@/hooks/usePermit3";
 import {
   createUnhingedProofFromAllLeaves,
   encodeChainAllowances,
@@ -15,6 +13,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import _ from "lodash";
 import { EcoChainIds, EcoProtocolAddresses, IntentType } from "@eco-foundation/routes-ts";
 import { intentSourceAbi } from "@/abis/intentSource";
+import { keyManagerRpc } from "@/utils/keyManagerRpc";
+import { PERMIT3_ADDRESSES } from "@/config/contracts";
 
 // Define schema for AllowanceOrTransfer
 const allowanceOrTransferSchema = z.object({
@@ -45,15 +45,11 @@ const executeRequestSchema = z.object({
 const privateKey = process.env.WALLET_PRIVATE_KEY as Hex;
 if (!privateKey) throw new Error("Private key required");
 
-const multicall3Abi = [
+const multicall3Abi = parseAbi([
   "struct Call3 { address target; bool allowFailure; bytes callData; }",
   "struct Result { bool success; bytes returnData; }",
   "function aggregate3(Call3[] calldata calls) public payable returns (Result[] memory returnData)",
-] as const;
-
-const chain = extractChain({ chains, id: 1 });
-
-console.log("tes", { chain });
+]);
 
 const handleExecutePermit3 = async (
   chainId: number,
@@ -61,8 +57,6 @@ const handleExecutePermit3 = async (
   intents: IntentType[],
 ) => {
   const chain = extractChain({ chains, id: chainId as (typeof chains)[number]["id"] });
-
-  console.log({ chainId, chain });
 
   const walletClient = createWalletClient({
     chain,
@@ -100,11 +94,14 @@ const handleExecutePermit3 = async (
   console.log({ unhingedProof, unhingedRoot, targetLeafIndex, leaf });
 
   // Create a chain-specific unhinged proof structure
-  const chainSpecificProof = {
-    unhingedProof,
-    permits: {
-      chainId: BigInt(chainId),
-      permits: chainPermits,
+  const chainSpecificProof: {
+    permits: { chainId: bigint; permits: typeof chainSpecificPermits.permits };
+    unhingedProof: { nodes: Hex[]; counts: Hex };
+  } = {
+    permits: chainSpecificPermits,
+    unhingedProof: {
+      nodes: unhingedProof.nodes,
+      counts: unhingedProof.counts,
     },
   };
 
@@ -178,7 +175,7 @@ export async function POST(req: NextRequest) {
       return handleExecutePermit3(
         chainId,
         validatedData.permit3Result as Permit3SignatureResult,
-        intentsPerChain[chainId],
+        intentsPerChain[chainId] || [],
       );
     });
 

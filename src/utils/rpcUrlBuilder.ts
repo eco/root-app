@@ -1,4 +1,4 @@
-import { type Chain } from "wagmi";
+import { type Chain } from "viem";
 
 export type ApiKeys = {
   alchemy?: string;

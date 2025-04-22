@@ -5,8 +5,8 @@ import { useAccount } from "wagmi";
 import { createPublicClient } from "viem";
 import { tokens } from "@/config/tokens";
 import { chains } from "@/config/chains";
-import { keyManagerRpc } from "@/utils/keyManagerRpc";
 import { GroupedTokenBalance, TokenBalance } from "@/types/tokens";
+import { keyManagerRpc } from "@/utils/keyManagerRpc";
 
 // ERC20 ABI (minimal for balance checking)
 const erc20Abi = [
@@ -31,7 +31,7 @@ async function fetchBalances(walletAddress: string | undefined): Promise<TokenBa
   for (const chain of chains) {
     const publicClient = createPublicClient({
       chain,
-      transport: keyManagerRpc(), // Uses default API keys from rpcUrlBuilder
+      transport: keyManagerRpc(), // Using standard HTTP transport
     });
 
     // Filter tokens available on this chain

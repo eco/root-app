@@ -1,4 +1,4 @@
-import { Chain } from "wagmi";
+import { type Chain } from "viem";
 import { buildRpcUrl, type ApiKeys } from "./rpcUrlBuilder";
 
 interface CustomProviderConfig {
@@ -7,6 +7,7 @@ interface CustomProviderConfig {
 
 /**
  * Creates a custom provider for wagmi that uses the unified RPC URL builder
+ * Note: This provider is no longer used with RainbowKit v2 / Wagmi v2
  */
 export function customProvider(config?: CustomProviderConfig) {
   return function (chain: Chain) {
