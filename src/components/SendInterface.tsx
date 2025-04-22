@@ -625,6 +625,59 @@ export function SendInterface() {
           {errors.amount && <p className="mt-1 text-sm text-red-600">{errors.amount}</p>}
         </div>
 
+        {/* Display quote amount before the send button */}
+        {amount && selectedChainTokenPair && (
+          <div className="mb-4">
+            {areQuotesLoading ? (
+              <div className="flex items-center justify-center p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+                <svg
+                  className="animate-spin h-5 w-5 mr-2 text-blue-600"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span className="text-gray-700 dark:text-gray-300">
+                  Calculating amount to receive...
+                </span>
+              </div>
+            ) : quotesError ? (
+              <div className="p-3 bg-red-100 dark:bg-red-900 rounded-md">
+                <p className="text-sm text-red-600 dark:text-red-200">
+                  {quotesError instanceof Error ? quotesError.message : "Error calculating quote"}
+                </p>
+              </div>
+            ) : quotesData ? (
+              <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  You will receive approximately:
+                </p>
+                <p className="text-xl font-bold text-gray-800 dark:text-gray-200">
+                  {(() => {
+                    // Get target token decimals
+                    const targetPair = parseSelectedTokenPair(selectedChainTokenPair);
+                    return formatTokenAmount(quotesData.amount, targetPair.token.decimals);
+                  })()}{" "}
+                  {parseSelectedTokenPair(selectedChainTokenPair).token.symbol}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={
