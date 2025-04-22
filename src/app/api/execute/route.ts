@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { replaceBigInts } from "@/utils/json";
+import { replaceBigInts, restoreBigInts } from "@/utils/json";
 
 export async function POST(req: NextRequest) {
   try {
     // Parse the JSON body from the request
     const body = await req.json();
 
-    // Process the body to convert any BigInt values to strings
-    const processedBody = replaceBigInts(body);
+    // Restore BigInt values from their serialized representation
+    const restoredBody = restoreBigInts(body);
+
+    // For logging, we need to convert BigInt values to a serialized format
+    const processedForLogging = replaceBigInts(restoredBody);
 
     // Log the received data (in a production environment, you might want to log this to a secure location)
-    console.log("Received data in execute endpoint:", JSON.stringify(processedBody, null, 2));
+    console.log("Received data in execute endpoint:", JSON.stringify(processedForLogging, null, 2));
 
     // Return a success response
     return NextResponse.json({
       success: true,
       message: "Data received successfully",
-      data: processedBody,
+      data: processedForLogging,
     });
   } catch (error) {
     console.error("Error processing execute request:", error);
