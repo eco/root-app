@@ -260,6 +260,8 @@ export function SendInterface() {
       return;
     }
 
+    console.log({ selectedTokensList, selectedTokens });
+
     setIsSubmitting(true);
 
     try {
@@ -414,7 +416,9 @@ export function SendInterface() {
         );
       };
 
-      const { tokens, remaining } = selectedTokens
+      const selectedTokensList = selectedTokens.filter((t) => t.isSelected);
+
+      const { tokens, remaining } = selectedTokensList
         .sort((tokenA, tokenB) => {
           if (isTargetToken(tokenA)) return -1;
           if (isTargetToken(tokenB)) return 1;
