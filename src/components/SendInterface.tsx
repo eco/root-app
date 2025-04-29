@@ -462,7 +462,7 @@ export function SendInterface() {
           originChainID: token.chainId as RoutesSupportedChainId,
           destinationChainID: target.chainId as RoutesSupportedChainId,
           receivingToken: target.token.addresses[target.chainId],
-          spendingTokenLimit: BigInt(Number.MAX_VALUE),
+          spendingTokenLimit: BigInt(Number.MAX_SAFE_INTEGER),
         };
 
         const preflightIntent = routesService.createSimpleIntent(preflightIntentParams);
